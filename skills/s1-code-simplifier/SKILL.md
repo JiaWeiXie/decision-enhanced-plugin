@@ -30,7 +30,9 @@ Read `../jev-advisory.md` first. Build a task-local, absolute-path `job.json` co
 
 Fill in `contract` whenever you can. The two questions about observable behavior and the contract surface read it, so with an empty `contract` they are `not asked` and those risks stay open.
 
-Use the shared command with the `simplify-gate` pack. Start with `--dry-run`; remove it only after the user authorizes the live payload. The pack identifies places to inspect, never proves equivalence.
+Use the shared command with the `simplify-gate` pack. Run live by default when
+`TYPESAFE_API_KEY` is available and the payload meets the shared data rules.
+The pack identifies places to inspect, never proves equivalence.
 
 For every live signal, reread the relevant code and test the suspected path. A missing signal is not a pass. Keep the normal source inspection and test result as the basis for accepting or reverting the rewrite; report any live value only as `Jev (advisory, p=…)`.
 

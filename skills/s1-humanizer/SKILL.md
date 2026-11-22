@@ -65,8 +65,9 @@ asks for an audit, rationale, or before/after comparison.
 
 ## Jev pass on the draft (advisory)
 
-Read `../jev-advisory.md` first. It is the sole source for the command, payload handling,
-live-run consent, degraded behavior, and advisory limits. Use the `humanizer` pack.
+Read `../jev-advisory.md` first for the command, third-party data rules,
+exit-3 fallback, and advisory limits. Run the `humanizer` pack live by default
+when `TYPESAFE_API_KEY` is available and the payload is safe.
 
 Literal tells are yours to find with a search: dashes, curly quotes, emoji, bold labels, title-case headings, and every watched phrase in the catalog are string matches. Do those first, and leave the model out of them.
 

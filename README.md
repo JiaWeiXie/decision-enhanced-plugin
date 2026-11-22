@@ -89,7 +89,7 @@ Instructions that name a skill directly, such as a `CLAUDE.md` or `AGENTS.md` li
 ## Requirements
 
 - Node 20 or newer (`package.json` engines); this repo pins 24.18.0 in `mise.toml`.
-- `TYPESAFE_API_KEY` in the environment for live judgments. Without it, the skills run their original procedure and state plainly that no judgment was available.
+- `TYPESAFE_API_KEY` in the environment for live judgments. Skills use live mode by default when the key is available and the payload is safe. Without a key, the skills run their original procedure and report that no judgment was available.
 
 ```
 mise install
@@ -105,11 +105,13 @@ CI runs syntax checks and offline tests on Node 20 and 24, verifies the vendored
 node src/cli.mjs <pack> --state state.json --json
 ```
 
+The command above runs live and sends the pack's filtered state and questions to TypeSafe. A preview and per-session confirmation are optional. Send only the minimum evidence the pack needs. Never include credentials, tokens, private keys, `.env` contents, customer data, or sensitive personal data. If no safe payload can be built, skip Jev and say why or ask for a safe excerpt. See the [shared data rules](skills/jev-advisory.md#sending-text-to-a-third-party).
+
 Flags: `--state <file|->` (`-` reads the state from stdin), `--dry-run` (build questions, contact nothing), `--mock <file>` (replay recorded answers), `--json`, `--help`, `--list`. The pack's own `validateState` runs before any request is made; a malformed state is reported on stderr and exits 2. `npm install -g .` or `npx` exposes the same CLI as `jev-pack`.
 
 Exit codes: `0` success, `2` input error, `3` no judgment available. Exit 3 also sets `"mode": "unavailable"` in the JSON body, so a skill can distinguish a missing service from a negative answer.
 
-Each pack's `--state` shape is documented at the top of its file in `packs/`. That shape is the job file; the state the model actually receives is what the pack's `buildState` derives from it, and `--dry-run` prints that under `request.state`. State text is judged as given: a path or a shell command placed in a code field is provenance, and the packs judge only the text supplied.
+Each pack's `--state` shape is documented at the top of its file in `packs/`. That shape is the job file; the pack's `buildState` derives the state sent to the model. For an optional local preview, `--dry-run` prints `request.state` and `request.questions`. Check both when reviewing the payload, since questions can also contain excerpts. State text is judged as given: a path or a shell command placed in a code field is provenance, and the packs judge only the text supplied.
 
 ## Failure behavior
 
@@ -152,4 +154,4 @@ The pattern catalogs in both humanizer skills derive from Wikipedia's ["Signs of
 
 ### Runtime dependency
 
-[`@typesafe-ai/sdk`](https://www.npmjs.com/package/@typesafe-ai/sdk) 0.6.0 is vendored at `src/vendor/typesafe-sdk.mjs` so Git marketplace installations work without an install hook. It remains MIT-licensed by TypeSafe; its license is `licenses/MIT-typesafe-ai-sdk.txt` and its exact source hash is recorded in `audit.json`. Using it requires a TypeSafe account and sends a filtered version of the state you pass to a pack to the TypeSafe API. Packs send only what their `buildState` keeps from `--state`; run with `--dry-run` to see exactly that payload before a live call.
+[`@typesafe-ai/sdk`](https://www.npmjs.com/package/@typesafe-ai/sdk) 0.6.0 is vendored at `src/vendor/typesafe-sdk.mjs` so Git marketplace installations work without an install hook. It remains MIT-licensed by TypeSafe; its license is `licenses/MIT-typesafe-ai-sdk.txt` and its exact source hash is recorded in `audit.json`. Using it requires a TypeSafe account and sends a filtered version of the state you pass to a pack to the TypeSafe API. Add `--dry-run` to inspect the filtered state and questions locally.

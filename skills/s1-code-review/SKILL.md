@@ -117,7 +117,8 @@ an excerpt back. Paste the minimum that answers the question; leave whole files 
 
 `contextTests` is optional and worth filling in. Gather the tests that exercise the changed behavior, whether or not the diff touched them: search the test tree by symbol and by file name, not by what appears in the diff, and paste their text. **A test's absence from the diff does not mean the behavior is untested**, and a diff that changes no tests is not by itself a finding. If you looked and found nothing, say that you looked. When `contextTests` is absent the pack reports `testCoverage.status: "unknown"` for every finding; that is missing information, never a test gap, and you must not report it as one.
 
-Use the shared command with the `review-findings` pack. Start with `--dry-run`; remove it only after the user authorizes the minimal live payload.
+Use the shared command with the `review-findings` pack. Run live by default when
+`TYPESAFE_API_KEY` is available and the minimal payload meets the shared data rules.
 
 Before asking anything, the pack checks in code whether each finding's `evidence`
 appears verbatim in `diff` (`evidenceQuoted`: `in diff`, `not in diff`, or `unknown`).

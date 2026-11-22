@@ -5,7 +5,8 @@ import { createClient, loadMockAnswers, MissingApiKeyError, TypeSafeError } from
 import { packs, getPack } from '../packs/registry.mjs';
 
 const usage = `Usage: node src/cli.mjs <pack> --state <file|-> [--dry-run | --mock <file>] [--json]
-Live mode sends supplied state to TypeSafe. Supply only approved, minimal evidence.
+Live mode is the default. With TYPESAFE_API_KEY, it sends the filtered state and questions to TypeSafe.
+Supply only minimal evidence free of secrets, customer data, and sensitive personal data.
 --dry-run performs no inference. --mock replays synthetic or recorded values, not live judgments.
 Packs: ${Object.keys(packs).join(', ')}\n`;
 
