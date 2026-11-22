@@ -24,11 +24,22 @@ test('missing required collection is an input error, not a clean empty judgment'
   assert.equal(result.stdout, '');
 });
 
-test('missing key preserves prose while clearly marking judgments unavailable', () => {
+test('help advertises live as the default and preview and replay as explicit options', () => {
+  const result = spawnSync(process.execPath, [cli, '--help'], {
+    encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '' },
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Live mode is the default/);
+  assert.match(result.stdout, /--dry-run performs no inference/);
+  assert.match(result.stdout, /--mock replays/);
+});
+
+test('default mode without a key preserves prose and exits unavailable', () => {
   const result = invoke({ passages: ['Keep 420 ms and `retry_count=3`.'], locale: 'en', context: 'Preserve facts.' });
   assert.equal(result.status, 3);
   const output = JSON.parse(result.stdout);
   assert.equal(output.mode, 'unavailable');
+  assert.equal(output.reason, 'missing_api_key');
   assert.equal(output.answers, null);
   assert.equal(output.result.passages[0].text, 'Keep 420 ms and `retry_count=3`.');
   assert.equal(output.result.rewritten, false);

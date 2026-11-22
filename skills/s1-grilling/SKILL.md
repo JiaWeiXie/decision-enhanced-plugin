@@ -74,7 +74,9 @@ Before you send a round, write the tree to `job.json`:
 }
 ```
 
-Run the shared CLI command from `../jev-advisory.md` with pack `grilling-frontier`, first with `--dry-run`. After the user authorizes the minimal `context` excerpt for a live run, remove `--dry-run`; use `--json` when the result will be read programmatically.
+Run the shared CLI command from `../jev-advisory.md` with pack `grilling-frontier`.
+Run live by default when `TYPESAFE_API_KEY` is available and the minimal `context`
+excerpt meets the shared data rules. Use `--json` for programmatic reads.
 
 The frontier itself is graph arithmetic: a question is on the frontier when every id in its `prerequisites` appears in `settled`. The pack computes that literally. Its state validator requires a `questions` array; `settled` defaults to `[]`, and `context` should be the minimum relevant conversation excerpt. Do not use a judgment to alter eligibility.
 

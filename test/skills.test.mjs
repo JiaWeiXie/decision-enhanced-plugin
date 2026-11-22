@@ -87,3 +87,16 @@ test('bundled skills expose concise model-invocation metadata', () => {
     );
   }
 });
+
+test('shared runtime examples select live mode by omitting preview and replay flags', () => {
+  const advisory = readFileSync(`${skillsDirectory}/jev-advisory.md`, 'utf8');
+  const runtimeSection = advisory.split('## The command\n')[1].split('\n## ')[0];
+  const examples = runtimeSection.split('```bash\n')[1].split('```')[0];
+  const commands = examples.split('\n').filter((line) => line.startsWith('node '));
+
+  assert.equal(commands.length, 2, 'expected examples for both host path conventions');
+  for (const command of commands) {
+    assert.match(command, /src\/cli\.mjs" <pack> --state \/absolute\/path\/to\/job\.json --json$/);
+    assert.doesNotMatch(command, /--dry-run|--mock/);
+  }
+});

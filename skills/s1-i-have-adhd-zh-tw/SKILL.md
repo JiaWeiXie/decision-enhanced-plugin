@@ -142,8 +142,9 @@ When the rules above are not concrete enough, write like the right-hand column:
 
 This step is optional; do not run it on every reply. It is worth running in only two cases: the draft is long and structurally complex, or the user explicitly asked for an audit of this reply. For everyday short replies, self-check against "Pre-send checklist" below; an extra round trip only slows the reply down.
 
-Read `../jev-advisory.md` first. It is the sole source for the command, payload handling,
-live-run consent, degraded behavior, and advisory limits. Use the `reply-check` pack.
+Read `../jev-advisory.md` first for the command, third-party data rules,
+exit-3 fallback, and advisory limits. Run the `reply-check` pack live by default
+when `TYPESAFE_API_KEY` is available and the payload is safe.
 
 When you do run it, write the draft and the original request into `job.json`:
 

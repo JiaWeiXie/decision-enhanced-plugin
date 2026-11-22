@@ -24,8 +24,9 @@ Source: https://docs.typesafe.ai/concepts/system-one
 
 The packs own the questions and the payload; you own the job file. Every pack
 turns the `job.json` you write into a smaller *model state* with its own
-`buildState`, and only that model state is posted. `--dry-run` prints it under
-`request.state`, so what you see there is exactly what a live run would send.
+`buildState`, and posts it with the pack's questions. Some questions also contain excerpts,
+such as a review's candidate options. An optional `--dry-run` prints both
+`request.state` and `request.questions` for local inspection.
 
 What the packs do for you, following TypeSafe's published guidance
 (https://docs.typesafe.ai/concepts/how-to-build-with-system-one,
@@ -66,15 +67,18 @@ What stays yours:
 ## The command
 
 Resolve the installed CLI and an absolute state-file path before running it. Keep
-the working directory unchanged so state files stay in the task workspace. Start
-with a local payload preview; remove `--dry-run` only for an authorized live run.
+the working directory unchanged so state files stay in the task workspace. Run
+live by default when `TYPESAFE_API_KEY` is available and the payload meets the
+[third-party data rules](#sending-text-to-a-third-party) below. A preview and
+per-session confirmation are optional. If the key is missing, the live command
+degrades locally with exit 3 when a judgment is needed.
 
 ```bash
 # Claude Code
-node "${CLAUDE_PLUGIN_ROOT}/src/cli.mjs" <pack> --state /absolute/path/to/job.json --dry-run --json
+node "${CLAUDE_PLUGIN_ROOT}/src/cli.mjs" <pack> --state /absolute/path/to/job.json --json
 
 # OpenAI Codex or Oh My Pi: use the absolute skill directory supplied by the host
-node "<skill-directory>/../../src/cli.mjs" <pack> --state /absolute/path/to/job.json --dry-run --json
+node "<skill-directory>/../../src/cli.mjs" <pack> --state /absolute/path/to/job.json --json
 ```
 
 - Use a task-local temporary file for `job.json`; do not overwrite an existing
@@ -84,15 +88,14 @@ node "<skill-directory>/../../src/cli.mjs" <pack> --state /absolute/path/to/job.
 - `--json` gives machine-readable output; drop it for a human-readable report.
 - `--dry-run` makes **no** inference. It prints
   `{"mode":"dry-run","request":{"state":…,"model":…,"questions":…},"answers":null}`,
-  where `state` is the filtered model state, so you can show the user exactly what a
-  live run would send.
+  where `state` and `questions` show the text a live run would send.
 - `--mock <file>` replays recorded answers (`mode: "mock"`). Mock answers are fixtures,
   not judgments; never present them to the user as model output.
 - `--list` prints the registered pack names. `--help` prints the usage.
 - There is no `--pack-arg`. Everything the pack needs goes in the state file.
 - The CLI calls the pack's `validateState(state)` before it builds any question. A
   state the pack rejects prints that message to stderr and exits 2.
-- From the repo root, `mise run jev -- <pack> --state /absolute/path/to/job.json --dry-run --json` runs the same local preview.
+- From the repo root, `mise run jev -- <pack> --state /absolute/path/to/job.json --json` runs the same command.
 
 ## Exit codes and modes
 
@@ -158,10 +161,11 @@ cutoff in a skill. The bands are readability buckets; none of them is a validate
 
 ## Sending text to a third party
 
-`--dry-run` stays local. A live run posts the state you built to the TypeSafe API.
+A live run sends the filtered state and questions to the TypeSafe API. Send only
+the minimum evidence the pack needs. Check every excerpt that will be sent, including
+text used in question options. Field projection does not redact text.
 
-Before the first live run in a session, ask the user for permission and say what will
-be sent. Send the minimum evidence the pack needs: the passage, hunk, or question under
-review, and nothing else. Never include credentials, tokens, private keys, `.env`
-contents, customer data, or whole files when an excerpt answers the question. If you
-cannot build a payload without secrets, skip the judgment pass and say so.
+Never include credentials, tokens, private keys, `.env` contents, customer data,
+or sensitive personal data. Use an excerpt when it answers the question. If you
+cannot build a safe payload, skip Jev and say why, or ask for a safe excerpt before
+running live. Continue the skill's local workflow when Jev is skipped.

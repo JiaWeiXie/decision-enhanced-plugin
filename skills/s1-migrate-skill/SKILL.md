@@ -73,9 +73,9 @@ The job file the skill writes and the state Jev reads are different objects. Exp
 - When the text of a Choice option is what the model weighs (a candidate excerpt, a skill description), put it in the option value, not in state as well.
 - Every backticked path in a question must resolve to non-empty text in `buildState(state)`. The registry-wide path test enforces this.
 
-## Step 3c: check the wording live, with the user's permission
+## Step 3c: check the wording live on synthetic cases
 
-Wording is empirical; TypeSafe's docs say to test phrasings on your own data. With the user's permission and a `TYPESAFE_API_KEY`, send 4 to 8 synthetic labeled cases (half should lean yes, half no) through two or three candidate wordings in one request each, and keep the wording that separates them best. Keep example phrases in criteria distinct from the test cases, or the check measures copying. Record the cases and results in the pull request, not in the repository.
+With `TYPESAFE_API_KEY` available, use the live command in `../jev-advisory.md` on 4 to 8 safe synthetic labeled cases (half should lean yes, half no). Send one request per candidate wording, compare two or three wordings, and keep the one that separates the cases best. Skip this wording check if the key is unavailable or the task calls for offline work. Keep example phrases in criteria distinct from the test cases, or the check measures copying. Record the cases and results in the pull request, not in the repository.
 
 Write the questions down in the pack header before writing code; they are the reviewable artifact.
 
@@ -109,7 +109,7 @@ Create `skills/s1-<name>/SKILL.md`:
 
 - Frontmatter: `name: s1-<name>` (equal to the directory name), a plain-string `description` that retains only the original workflow's real trigger branches, and a `license` that accurately reflects the copied material.
 - Keep the original procedure. Rewrite only what the migration requires: dropped companion dependencies, the `s1-` name, and en-US instructions. Target-language examples, quoted patterns, and copyright names stay literal.
-- Add one section, `## Jev <what it judges> (advisory)`, at the workflow step where the judgment belongs. It must say `Read ../jev-advisory.md first`, name the concrete pack, and show a `job.json` state shape that matches the pack header field for field. Point to the shared command reference instead of copying host-specific command blocks. State how the signals affect this workflow, its hard limits, the minimal text sent to the third party, the need for permission before the first live run, and the exit-3 fallback.
+- Add one section, `## Jev <what it judges> (advisory)`, at the workflow step where the judgment belongs. It must say `Read ../jev-advisory.md first`, name the concrete pack, and show a `job.json` state shape that matches the pack header field for field. Point to the shared command reference instead of copying host-specific command blocks. State how the signals affect this workflow, its hard limits, the minimal text sent to the third party, the shared data rules, the live-by-default runtime when `TYPESAFE_API_KEY` is available and the payload is safe, and the exit-3 fallback.
 - End with an attribution line: `Adapted from <upstream> by <holder> (<SPDX>). See ../../NOTICE and ../../audit.json.`
 
 If the original keeps a large reference catalog, split it into `skills/s1-<name>/references/` and copy it verbatim, as `s1-humanizer` does.
@@ -134,9 +134,9 @@ Test through `decide` and `render` output, not through property-name scans or qu
 - Add a replay fixture `evals/<pack>-mock.json`: `{"answers": {…}}` with a well-formed value for **every** question id. `src/jev.mjs` validates a replay as strictly as a live response, so one missing or mistyped id makes the whole run degrade with exit 3. The `unknown` path is covered by the Step 6 tests, not by this fixture.
 - Add a synthetic case to `evals/evals.json` comparing the adapted skill against the original on the behaviors the pack is meant to support. Results stay outside the repo.
 
-## Step 8: verify
+## Step 8: verify offline
 
-Run the project's targeted pack tests and syntax check, then use the shared CLI instructions in `../jev-advisory.md` with the concrete `<pack>`, first with `--dry-run` and then with the replay fixture. The dry run must exit 0 and print the exact Step 3 questions and the Step 3b model state with `answers: null`; a validation error (exit 2) means the fixture and pack header disagree. The replay must exit 0, preserve every input item, and show every signal as advisory. Do not run the skill's real data live during migration: the user must authorize both the run and the minimal data it sends. The Step 3c wording check uses synthetic cases only, and also needs the user's permission.
+For migration verification, run the project's targeted pack tests and syntax check, then use the shared CLI instructions in `../jev-advisory.md` with the concrete `<pack>`, first with `--dry-run` and then with the replay fixture. The dry run must exit 0 and print the exact Step 3 questions and the Step 3b model state with `answers: null`; a validation error (exit 2) means the fixture and pack header disagree. The replay must exit 0, preserve every input item, and show every signal as advisory. Use only synthetic fixtures in this step. These offline checks do not apply to normal skill usage. Step 3c is a separate synthetic-only wording check.
 
 Report what was migrated, what was deliberately left out, and the license decision, in that order.
 
