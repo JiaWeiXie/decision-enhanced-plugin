@@ -23,12 +23,20 @@ export const ADVISORY_NOTE =
  "rather than thresholds validated on this repository.";
 
 /** Reason text when the workflow ran without any judgments at all. */
-export function unavailableNote(reason) {
+export function unavailableNote(reason, source = "Jev") {
  return (
-  `Jev judgments unavailable (${reason}). Every item in this report is kept ` +
+  `${source} judgments unavailable (${reason}). Every item in this report is kept ` +
   "and shown without advisory signals; the deterministic part of this pack is " +
   "unaffected."
  );
+}
+
+export function judgmentNote(response, available, reason) {
+ if (response?.mode === "chat-advisory") {
+  return "Generated suggestions are shown separately. The pack received no decision probabilities.";
+ }
+ const source = response?.provider ? "Provider" : "Jev";
+ return available ? ADVISORY_NOTE.replace("Jev", source) : unavailableNote(reason, source);
 }
 
 /**

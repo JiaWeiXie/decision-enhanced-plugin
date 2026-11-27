@@ -24,7 +24,7 @@
 
 import { noul } from "../src/jev.mjs";
 import {
- ADVISORY_BANDS, ADVISORY_NOTE,
+ ADVISORY_BANDS,
  anyUnknown,
  asArray,
  asText,
@@ -34,7 +34,7 @@ import {
  readNoul,
  report,
  signalLine,
- unavailableNote,
+ judgmentNote,
 } from "./shared.mjs"
 
 export const name = "humanizer";
@@ -250,7 +250,7 @@ export function decide(response, state, _args = {}) {
   rewritten: false,
   authorshipJudged: false,
   advisoryOnly: true,
-  note: available ? ADVISORY_NOTE : unavailableNote(reason),
+  note: judgmentNote(response, available, reason),
  };
 }
 

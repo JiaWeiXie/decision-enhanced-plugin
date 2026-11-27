@@ -107,15 +107,66 @@ node src/cli.mjs <pack> --state state.json --json
 
 The command above runs live and sends the pack's filtered state and questions to TypeSafe. A preview and per-session confirmation are optional. Send only the minimum evidence the pack needs. Never include credentials, tokens, private keys, `.env` contents, customer data, or sensitive personal data. If no safe payload can be built, skip Jev and say why or ask for a safe excerpt. See the [shared data rules](skills/jev-advisory.md#sending-text-to-a-third-party).
 
-Flags: `--state <file|->` (`-` reads the state from stdin), `--dry-run` (build questions, contact nothing), `--mock <file>` (replay recorded answers), `--json`, `--help`, `--list`. The pack's own `validateState` runs before any request is made; a malformed state is reported on stderr and exits 2. `npm install -g .` or `npx` exposes the same CLI as `jev-pack`.
+Flags include `--state <file|->` (`-` reads the state from stdin), `--dry-run` (build the payload locally), `--mock <file>` (replay recorded answers locally), `--json`, `--help`, and `--list`. See the provider options below. The pack's own `validateState` runs before any request is made; a malformed state is reported on stderr and exits 2. `npm install -g .` or `npx` exposes the same CLI as `jev-pack`.
 
 Exit codes: `0` success, `2` input error, `3` no judgment available. Exit 3 also sets `"mode": "unavailable"` in the JSON body, so a skill can distinguish a missing service from a negative answer.
 
-Each pack's `--state` shape is documented at the top of its file in `packs/`. That shape is the job file; the pack's `buildState` derives the state sent to the model. For an optional local preview, `--dry-run` prints `request.state` and `request.questions`. Check both when reviewing the payload, since questions can also contain excerpts. State text is judged as given: a path or a shell command placed in a code field is provenance, and the packs judge only the text supplied.
+Each pack's `--state` shape is documented at the top of its file in `packs/`. That shape is the job file; the pack's `buildState` derives the state sent to the model. Use `--dry-run` to inspect the request body, including state and any excerpts embedded in questions. State text is judged as given: a path or a shell command placed in a code field is provenance, and the packs judge only the text supplied.
+
+## Choosing a provider
+
+Set the key for the selected provider in the CLI process environment through your secret manager. Keep keys out of state files, shell history, provider URLs, and source control. Choose a provider explicitly with `--provider`. Other providers’ keys do not affect the choice. Use `--model <id>` to select a supported model. The direct OpenAI and Gemini Decisions APIs each support only the model listed below.
+
+| `--provider` | Default model | Where to get the credential |
+| --- | --- | --- |
+| `typesafe` (default) | `jev-latest`, or `TYPESAFE_MODEL` | Get a TypeSafe API key and set `TYPESAFE_API_KEY`. [TypeSafe quickstart](https://docs.typesafe.ai/introduction/quickstart) |
+| `openai` | `gpt-6-luna` | Create a project API key and set `OPENAI_API_KEY`. [API keys](https://platform.openai.com/api-keys) · [Decisions API](https://developers.openai.com/api/docs/guides/decisions) |
+| `gemini` | `gemini-decision-1` | Create a Gemini API key in Google AI Studio and set `GEMINI_API_KEY`. [Key setup](https://aistudio.google.com/docs/api-key) · [Decisions API](https://aistudio.google.com/docs/decisions-api) |
+| `cloudflare` | `clef` | In Workers AI, select **Use REST API** and create an account-scoped Workers AI API token. Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. You can also select `clef-flash` or `clef-omni`. [Token setup](https://developers.cloudflare.com/workers-ai/get-started/rest-api/) · [Clef API](https://developers.cloudflare.com/workers-ai/models/clef/) |
+| `opencode` | `jev-1.14` | Get an OpenCode Console API key and set `OPENCODE_API_KEY`. Use a decision model ID from the hosted catalog, such as `gemini-decision-1`. [Console and model setup](https://opencode.ai/docs/console/models#jev) · [Hosted inference API](https://opencode.ai/docs/console/api/inference/) |
+| `ollama-cloud` | `clef` | Create an Ollama Cloud API key and set `OLLAMA_API_KEY`. Direct cloud inference uses your account’s plan or credits. [Key setup](https://docs.ollama.com/api/authentication) · [Cloud decision models](https://docs.ollama.com/capabilities/decision#use-a-cloud-model) |
+
+For example, preview a Gemini request locally and inspect its `endpoint` and `request` fields. When the payload is safe and the destination is authorized, omit `--dry-run` to send it.
+
+```sh
+node src/cli.mjs humanizer --state state.json --provider gemini --dry-run
+```
+
+OpenCode uses the hosted Console inference gateway, documented separately from the OpenCode client and SDK. Cloudflare’s Clef models use the Workers AI REST run endpoint. The CLI checks the following provider limits before sending a request. Providers also enforce their own context limits. Gemini, Cloudflare, and Ollama Cloud restrict question ID formats. The CLI assigns new IDs when needed and restores the original IDs in its output. [OpenCode client SDK](https://opencode.ai/docs/build/sdk/) · [Cloudflare Clef parameters](https://developers.cloudflare.com/workers-ai/models/clef/#parameters)
+
+| Provider | Questions per request | Options per choice | Levels per score |
+| --- | --- | --- | --- |
+| [OpenAI](https://developers.openai.com/api/reference/resources/decisions/methods/create) | Up to 400 | 2–255 | 2–10 |
+| [Gemini](https://aistudio.google.com/docs/decisions-api#limits) | Up to 1,000 | 2–255 | 2–255 nonempty levels |
+| [Cloudflare](https://developers.cloudflare.com/workers-ai/models/clef/#parameters) | Up to 64 | Per model | Per model |
+| [Ollama Cloud](https://docs.ollama.com/capabilities/decision#question-types) | Up to 64 | 2–26 | 2–10 |
+
+For Gemini, the CLI also maps option IDs that violate its format rules and restores them in both the selected option and probability distribution. A dry run shows any aliases in `optionIds`, keyed by the request’s question ID. Gemini sorts the IDs it receives, so aliasing can change which option wins an exact tie. The review pack’s `noMatch` option counts toward the choice limit. Use smaller inputs when a batch exceeds a limit. [Gemini key and batch limits](https://aistudio.google.com/docs/decisions-api#limits) · [Option ordering](https://aistudio.google.com/docs/decisions-api#choice)
+
+### Self-hosted servers
+
+Choose `--provider self-hosted` and supply all of `--base-url`, `--api-format`, and `--model`. Use an HTTPS URL or HTTP on `localhost`, `127.0.0.1`, or `[::1]`. Optional reverse-proxy path prefixes are kept. The CLI appends the selected API path and accepts a base URL that already ends in the corresponding `/v1` or `/api`. If your server’s reverse proxy requires bearer authentication, set `DECISION_SELF_HOSTED_API_KEY` to a credential scoped to that server. Ollama running locally requires no key.
+
+| `--api-format` | Server API | Output |
+| --- | --- | --- |
+| `system-one` | `/v1/systemone`, for example Ollama with `nimble` | Typed probabilities for the pack |
+| `openai-chat` | `/v1/chat/completions` | Generated suggestions |
+| `ollama-chat` | `/api/chat` | Generated suggestions |
+
+```sh
+node src/cli.mjs humanizer --state state.json --provider self-hosted \
+  --base-url http://127.0.0.1:11434 --api-format system-one --model nimble --dry-run
+```
+
+Install or pull the chosen model on your server first. Check the server’s routing: a local Ollama server can forward requests to cloud models. For local inference, select a local model. [Ollama decision and model setup](https://docs.ollama.com/capabilities/decision) · [Chat protocol](https://docs.ollama.com/api/chat) · [OpenAI-compatible protocol](https://docs.ollama.com/api/openai-compatibility)
+
+Native decisions use `mode: "live"`. For explicit alternate providers, `provider`, `format`, and the selected `model` identify the route. The pack uses native answers as advisory model output. Chat formats use `mode: "chat-advisory"` and return `suggestions` keyed by question ID, with `answers: null`. Suggestions are generated yes/no values, option labels, integer rubric levels, or `null` for uncertainty. They have no probabilities and leave the pack’s result on its deterministic path. Both chat formats require a server and model that support JSON Schema structured outputs. The CLI checks every suggested value again before showing it. Use `--mock` by itself to replay an existing fixture. [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs) · [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 
 ## Failure behavior
 
 A missing key, a network failure, an HTTP error, or a malformed answer all resolve to the same thing: `unknown`, reported as `unknown`. `unknown` means the absence of a signal. The packs never invent a probability, and service failures do not leak response contents into the report.
+
+The CLI makes one attempt and rejects redirects. A failed request never falls back to another service. Check credentials and model access after an authorization error. For a rate limit, check the provider’s retry guidance before explicitly rerunning the command. Automatic retries could duplicate paid inference. The CLI returns an input error for an unsupported model or a request above a locally checked limit.
 
 ## Evaluation
 

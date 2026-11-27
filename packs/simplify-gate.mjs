@@ -21,7 +21,7 @@
 
 import { noul } from "../src/jev.mjs";
 import {
- ADVISORY_BANDS, ADVISORY_NOTE,
+ ADVISORY_BANDS,
  anyUnknown,
  asText,
  band,
@@ -31,7 +31,7 @@ import {
  pct,
  readNoul,
  report,
- unavailableNote,
+ judgmentNote,
 } from "./shared.mjs"
 
 export const name = "simplify-gate";
@@ -166,7 +166,7 @@ export function decide(response, state, _args = {}) {
   equivalenceEstablished: false,
   advisoryOnly: true,
   focus: focusOf(risks, values),
-  note: available ? ADVISORY_NOTE : unavailableNote(reason),
+  note: judgmentNote(response, available, reason),
  };
 }
 

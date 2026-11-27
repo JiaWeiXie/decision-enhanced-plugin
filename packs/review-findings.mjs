@@ -58,7 +58,7 @@
 
 import { choice, noul } from "../src/jev.mjs";
 import {
- ADVISORY_BANDS, ADVISORY_NOTE,
+ ADVISORY_BANDS,
  anyUnknown,
  asArray,
  asText,
@@ -72,7 +72,7 @@ import {
  readNoul,
  report,
  signalLine,
- unavailableNote,
+ judgmentNote,
 } from "./shared.mjs"
 
 export const name = "review-findings";
@@ -348,7 +348,7 @@ export function decide(response, state, _args = {}) {
   droppedFindings: 0,
   testContextSupplied: testContext,
   advisoryOnly: true,
-  note: available ? ADVISORY_NOTE : unavailableNote(reason),
+  note: judgmentNote(response, available, reason),
  };
 }
 

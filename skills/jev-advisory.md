@@ -89,6 +89,10 @@ node "<skill-directory>/../../src/cli.mjs" <pack> --state /absolute/path/to/job.
 - `--dry-run` makes **no** inference. It prints
   `{"mode":"dry-run","request":{"state":…,"model":…,"questions":…},"answers":null}`,
   where `state` and `questions` show the text a live run would send.
+- Use an alternate provider only when explicitly selected for the run. The
+  [provider guide](../README.md#choosing-a-provider) gives the flags and key setup.
+  The alternate provider’s dry run shows the destination and actual request body
+  with no auth headers. Apply the same data rules before sending it.
 - `--mock <file>` replays recorded answers (`mode: "mock"`). Mock answers are fixtures,
   not judgments; never present them to the user as model output.
 - `--list` prints the registered pack names. `--help` prints the usage.
@@ -103,12 +107,13 @@ Read `mode` in the output, and the exit code:
 
 | exit | `mode` | meaning |
 | --- | --- | --- |
-| 0 | `live` | real judgments in `answers` |
+| 0 | `live` | typed model judgments in `answers` |
+| 0 | `chat-advisory` | generated suggestions in `suggestions`, `answers: null` |
 | 0 | `dry-run` | payload only, `answers: null`, nothing sent |
 | 0 | `mock` | replayed fixtures |
 | 0 | `not-needed` | the pack built zero questions: `answers: {}`, `judgmentsAvailable: false` |
 | 2 | n/a | bad input: unknown pack, missing or unreadable `--state`, malformed JSON, or a state the pack's `validateState` rejects. Fix the call. |
-| 3 | `unavailable` | **no usable Jev result**: `answers: null`, `reason` says why |
+| 3 | `unavailable` | **no usable typed result**: `answers: null`, `reason` says why |
 
 Exit 3 is a normal outcome. `reason: "missing_api_key"` means no request
 was sent at all. Any other reason means the request failed somewhere between here and
@@ -117,11 +122,15 @@ back, so treat it as no result. When you get exit 3:
 
 1. Carry out the skill's original workflow in full. The judgment pass is an extra
    check, never the work itself.
-2. Tell the user plainly that no usable Jev result came back, and what `reason` said.
+2. Tell the user plainly that no usable judgment came back, and what `reason` said.
 3. Never report success, a probability, a score, or a label that did not come from a
    real `live` response. An invented number is worse than no number.
 
-A host helper such as an Eval `judge()` is not a substitute for this CLI unless the response identifies TypeSafe Jev as the model that answered. Some hosts fall back to a chat model when no TypeSafe credential is available, and a chat model's `0`/`1` distributions are not System One probabilities. If the answering backend is not TypeSafe Jev, or cannot be identified, treat the pass as `unavailable`.
+Attribute each live judgment to the provider and model shown by the CLI. Reserve the name
+Jev for results from a Jev model. A host fallback or chat response cannot supply
+typed decision probabilities. When `mode` is `chat-advisory`, complete the
+original workflow using your evidence. You can read the generated suggestions
+as a separate advisory check.
 
 Where the user's output contract is strict (only JSON, only code, only the final text),
 the contract wins: never inject a Jev note or an unavailability note into the artifact.
@@ -151,8 +160,8 @@ graphs, and file lookups are computed, not judged. Reserve judgments for the par
 is genuinely semantic, such as whether two wordings mean the same thing, or whether a
 question is ambiguous.
 
-Report a judgment as what it is: `Jev (advisory, p=0.78)`. Present confidence and
-probabilities as model output, never as measurement.
+Name the model when you report a judgment. Present confidence and probabilities
+as advisory model output.
 
 Every pack question and every display band lives in one reviewable place: the
 questions in `packs/<pack>.mjs` and the shared bands in `ADVISORY_BANDS`
@@ -161,7 +170,7 @@ cutoff in a skill. The bands are readability buckets; none of them is a validate
 
 ## Sending text to a third party
 
-A live run sends the filtered state and questions to the TypeSafe API. Send only
+A live run sends the filtered state and questions to the selected API. Send only
 the minimum evidence the pack needs. Check every excerpt that will be sent, including
 text used in question options. Field projection does not redact text.
 

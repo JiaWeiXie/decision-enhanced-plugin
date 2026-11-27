@@ -18,4 +18,4 @@ run = "node src/cli.mjs"
 
 [tasks.check]
 description = "Syntax-check every source file"
-run = "node --check src/jev.mjs && node --check src/cli.mjs && for f in packs/*.mjs; do node --check \"$f\"; done"
+run = "for f in src/*.mjs packs/*.mjs; do node --check \"$f\" || exit; done"
