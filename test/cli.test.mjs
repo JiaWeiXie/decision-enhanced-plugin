@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
-function run(pack, input, args = []) {
+function run(pack, input, args = [], extraEnv = {}) {
   return spawnSync(process.execPath, [cli, pack, '--state', '-', '--json', ...args], {
-    input, encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '' },
+    input, encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '', GOOGLE_API_KEY: '', DECISION_PROVIDER: 'auto', ...extraEnv },
   });
 }
 function invoke(input, args = []) {
@@ -26,7 +26,7 @@ test('missing required collection is an input error, not a clean empty judgment'
 
 test('help advertises live as the default and preview and replay as explicit options', () => {
   const result = spawnSync(process.execPath, [cli, '--help'], {
-    encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '' },
+    encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '', GOOGLE_API_KEY: '', DECISION_PROVIDER: 'auto' },
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Live mode is the default/);
@@ -68,4 +68,43 @@ test('dry-run shows the filtered model state, not the raw pack state', () => {
   assert.deepEqual(output.request.state, { request: 'Fix it.', draftOpening: 'Done.', draft: 'Done.\n\nMore.' });
   assert.deepEqual(Object.keys(output.request.state), ['request', 'draftOpening', 'draft'], 'reference before material');
   assert.ok(!result.stdout.includes('ZQX-WATCHED-4410'));
+});
+
+test('unknown provider from the flag or environment is unavailable and is not echoed', () => {
+  const secret = 'FIXTURE-UNKNOWN-77312';
+  const values = [['--provider', secret], []];
+  for (const args of values) {
+    const env = args.length ? {} : { DECISION_PROVIDER: secret };
+    const result = run('humanizer', '{"passages":[]}', args, env);
+    assert.equal(result.status, 3);
+    assert.equal(JSON.parse(result.stdout).reason, 'unknown_provider');
+    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
+  }
+});
+
+test('explicit provider overrides an invalid environment in offline preview', () => {
+  const result = run('humanizer', '{"passages":["Sample"],"locale":"en"}', ['--provider', 'gemini', '--dry-run'],
+    { DECISION_PROVIDER: 'invalid' });
+  assert.equal(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).provider, 'gemini');
+});
+
+test('secret-bearing payload never appears in stdout or stderr even with preview requested', () => {
+  const secret = 'SYNTHETICBLOCKEDTOKEN12345';
+  for (const args of [['--dry-run'], []]) {
+    const result = run('humanizer', JSON.stringify({ passages: [`password="${secret}"`], locale: 'en' }), args,
+      { TYPESAFE_API_KEY: 'fixture-key' });
+    assert.equal(result.status, 3);
+    assert.equal(JSON.parse(result.stdout).reason, 'unsafe_payload');
+    assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
+  }
+});
+
+test('custom destination or model flags cannot fall through to auto', () => {
+  const input = '{"passages":["Sample"],"locale":"en"}';
+  for (const flags of [['--custom-endpoint', 'https://fixture.invalid/'], ['--model', 'clef']]) {
+    const result = run('humanizer', input, flags);
+    assert.equal(result.status, 3);
+    assert.equal(JSON.parse(result.stdout).reason, 'invalid_provider_config');
+  }
 });

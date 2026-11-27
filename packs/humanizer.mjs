@@ -22,7 +22,7 @@
  * a question that was not asked is reported as `not asked`, never as a reading.
  */
 
-import { noul } from "../src/jev.mjs";
+import { noul } from "../src/decision.mjs";
 import {
  ADVISORY_BANDS, ADVISORY_NOTE,
  anyUnknown,

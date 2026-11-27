@@ -56,7 +56,7 @@
  * check. The basis question reads only the finding's own axis.
  */
 
-import { choice, noul } from "../src/jev.mjs";
+import { choice, noul } from "../src/decision.mjs";
 import {
  ADVISORY_BANDS, ADVISORY_NOTE,
  anyUnknown,
@@ -157,7 +157,7 @@ export function validateState(state) {
    for (const [position, candidate] of finding.candidates.entries()) {
     if (!isPlainObject(candidate)) return `State requires \`${at}.candidates[${position}]\` to be an object`;
     const label = labelOf(candidate, position);
-    if (labels.has(label)) return `State requires unique candidate ids in \`${at}.candidates\` (\`${label}\` repeats)`;
+    if (labels.has(label)) return `State requires unique candidate ids in \`${at}.candidates\``;
     labels.add(label);
    }
   }

@@ -31,7 +31,7 @@
  * anything that resembles counting. Without it, one holistic Noul is asked.
  */
 
-import { noul } from "../src/jev.mjs";
+import { noul } from "../src/decision.mjs";
 import {
  ADVISORY_BANDS, ADVISORY_NOTE,
  asArray,

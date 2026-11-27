@@ -1,6 +1,6 @@
 ---
-name: s1-code-simplifier
-description: Jev-checked variant of code-simplifier. Behavior-preserving cleanup of recently modified or named code (cut redundancy, flatten nesting, clarify names), verified by tests plus a TypeSafe Jev risk check for dropped cases, changed failure paths, and contract drift. Use when the user asks to simplify, clean up, tidy, de-duplicate, reduce nesting, or refactor code for readability, or to polish code written earlier in the session (簡化、整理、重構程式碼); not for new features, bug fixes, or performance work.
+name: decision-code-simplifier
+description: Judgment-checked variant of code-simplifier. Behavior-preserving cleanup of recently modified or named code (cut redundancy, flatten nesting, clarify names), verified by tests plus a advisory risk check for dropped cases, changed failure paths, and contract drift. Use when the user asks to simplify, clean up, tidy, de-duplicate, reduce nesting, or refactor code for readability, or to polish code written earlier in the session (簡化、整理、重構程式碼); not for new features, bug fixes, or performance work.
 license: Apache-2.0
 ---
 
@@ -16,9 +16,9 @@ Refine only code modified in the current session, unless the user names a broade
 4. **Check the behavioral contract.** Compare the before and after hunks for return values, failure paths, types, side effects, and ordering. Run the focused tests that exercise the changed behavior. If no such coverage exists, exercise the relevant path with a temporary smoke test and inspect the affected callers. Record what ran and any behavior that could not be verified.
 5. **Finish only when the result is clearer.** Keep a rewrite only when it reduces real complexity or makes the code easier to understand and extend. If no such improvement exists, make no change. Mention only changes that alter a reader's understanding.
 
-## Jev rewrite check (advisory)
+## Rewrite check (advisory)
 
-Read `../jev-advisory.md` first. Build a task-local, absolute-path `job.json` containing the smallest original and rewritten hunk plus the contract:
+Read `../decision-advisory.md` first. Build a task-local, absolute-path `job.json` containing the smallest original and rewritten hunk plus the contract:
 
 ```json
 {
@@ -31,10 +31,10 @@ Read `../jev-advisory.md` first. Build a task-local, absolute-path `job.json` co
 Fill in `contract` whenever you can. The two questions about observable behavior and the contract surface read it, so with an empty `contract` they are `not asked` and those risks stay open.
 
 Use the shared command with the `simplify-gate` pack. Run live by default when
-`TYPESAFE_API_KEY` is available and the payload meets the shared data rules.
+the selected provider is configured and the payload meets the shared data rules.
 The pack identifies places to inspect, never proves equivalence.
 
-For every live signal, reread the relevant code and test the suspected path. A missing signal is not a pass. Keep the normal source inspection and test result as the basis for accepting or reverting the rewrite; report any live value only as `Jev (advisory, p=…)`.
+For every live signal, reread the relevant code and test the suspected path. A missing signal is not a pass. Keep the normal source inspection and test result as the basis for accepting or reverting the rewrite; report any live value only as `Decision check (advisory, p=…)`.
 
 ---
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createClient, noul, choice, MissingApiKeyError } from '../src/jev.mjs';
+import { createClient, noul, choice, MissingApiKeyError } from '../src/decision.mjs';
 
 const questions = { supported: noul('Does the evidence support the claim?') };
 

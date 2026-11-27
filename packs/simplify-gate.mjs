@@ -19,7 +19,7 @@
  * with an empty contract they are `not asked`, and their risk stays open.
  */
 
-import { noul } from "../src/jev.mjs";
+import { noul } from "../src/decision.mjs";
 import {
  ADVISORY_BANDS, ADVISORY_NOTE,
  anyUnknown,

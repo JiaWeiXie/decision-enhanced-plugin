@@ -1,12 +1,12 @@
 {
-  "name": "jev-enhanced-plugin",
+  "name": "decision-enhanced-plugin",
   "owner": {
-    "name": "jev-enhanced-plugin contributors"
+    "name": "decision-enhanced-plugin contributors"
   },
   "plugins": [
     {
-      "name": "jev-enhanced-plugin",
-      "description": "Third-party skills enhanced with advisory TypeSafe Jev judgments.",
+      "name": "decision-enhanced-plugin",
+      "description": "Third-party skills enhanced with advisory typed provider judgments.",
       "version": "0.2.0",
       "source": "./"
     }

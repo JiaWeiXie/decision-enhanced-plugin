@@ -12,10 +12,13 @@ run = "npm ci"
 description = "Run the pack policy test suite"
 run = "node --test test/*.test.mjs"
 
-[tasks.jev]
+[tasks.decision]
 description = "Run a judgment pack (see src/cli.mjs --help)"
 run = "node src/cli.mjs"
 
 [tasks.check]
-description = "Syntax-check every source file"
-run = "node --check src/jev.mjs && node --check src/cli.mjs && for f in packs/*.mjs; do node --check \"$f\"; done"
+description = "Syntax-check JavaScript and the migration script"
+run = """
+find src packs test skills -name '*.mjs' -type f -print0 | xargs -0 -n 1 node --check
+python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("scripts/migrate-decision-plugin.py").read_text())'
+"""

@@ -1,23 +1,23 @@
-# jev-enhanced-plugin
+# decision-enhanced-plugin
 
-An [Agent Plugin](https://agent-plugins.org/) for OpenAI Codex, Claude Code, and Oh My Pi with six judgment-bearing skills. Each one is a skill already in use plus a single addition: a typed judgment from [TypeSafe](https://typesafe.ai) Jev (System One) at the points where the skill previously relied on the agent's own impression. A seventh skill, `s1-migrate-skill`, is the procedure for bringing further skills in.
+An [Agent Plugin](https://agent-plugins.org/) for OpenAI Codex, Claude Code, and Oh My Pi. Six skills add typed advisory judgments from a configurable decision provider. The seventh, `decision-migrate-skill`, describes how to adapt an existing skill.
 
-Jev output here is advisory. It never approves a change, never removes a finding, and never decides anything on the user's behalf. Anything a program can check exactly (string matches, dependency graphs, diff boundaries) is checked in code and never sent to a model.
+Decision output is advisory. It never approves a change, never removes a finding, and never decides anything on the user's behalf. Anything a program can check exactly (string matches, dependency graphs, diff boundaries) is checked in code and never sent to a model.
 
 ## Skills
 
 | Skill | Judgment pack | What the pack answers |
 | --- | --- | --- |
-| `s1-code-review` | `review-findings` | Per finding: does the quoted evidence support, contradict, or say nothing about the claim; does the finding's own axis (`standards` or `spec`) document its basis; is it covered by a supplied test; and which supplied code excerpt is the best citation (`noMatch` allowed). Diff membership and verbatim quoting are computed in code and never sent. |
-| `s1-code-simplifier` | `simplify-gate` | Risk that a rewrite changes observable behavior, drops a handled case, changes the contract surface, or changes failure paths. |
-| `s1-grilling` | `grilling-frontier` | Whether a question is already answered by context and whether it needs a user decision. Prerequisite eligibility is computed from the dependency graph in code, not judged. |
-| `s1-humanizer` | `humanizer` | Per passage: states anything specific, restates another passage, claims more than the context supports, would still be reworded by an editor in the target language. |
-| `s1-humanizer-zh-tw` | `humanizer` | Same pack, `zh-TW` locale. |
-| `s1-i-have-adhd-zh-tw` | `reply-check` | Whether a draft's opening paragraph answers, whether it delegates work back to the user, whether it covers each request item, and whether it adds unrequested scope. |
+| `decision-code-review` | `review-findings` | Per finding: does the quoted evidence support, contradict, or say nothing about the claim; does the finding's own axis (`standards` or `spec`) document its basis; is it covered by a supplied test; and which supplied code excerpt is the best citation (`noMatch` allowed). Diff membership and verbatim quoting are computed in code and never sent. |
+| `decision-code-simplifier` | `simplify-gate` | Risk that a rewrite changes observable behavior, drops a handled case, changes the contract surface, or changes failure paths. |
+| `decision-grilling` | `grilling-frontier` | Whether a question is already answered by context and whether it needs a user decision. Prerequisite eligibility is computed from the dependency graph in code, not judged. |
+| `decision-humanizer` | `humanizer` | Per passage: states anything specific, restates another passage, claims more than the context supports, would still be reworded by an editor in the target language. |
+| `decision-humanizer-zh-tw` | `humanizer` | Same pack, `zh-TW` locale. |
+| `decision-i-have-adhd-zh-tw` | `reply-check` | Whether a draft's opening paragraph answers, whether it delegates work back to the user, whether it covers each request item, and whether it adds unrequested scope. |
 
 Every skill keeps its original procedure. The pack runs alongside it and adds probabilities the human reader can use or ignore.
 
-### How the packs prompt Jev
+### How the packs write judgment questions
 
 The packs follow TypeSafe's [patterns](https://docs.typesafe.ai/patterns), [cookbooks](https://docs.typesafe.ai/cookbooks), and [jev-1.13 jaggedness notes](https://docs.typesafe.ai/model-jaggedness/jev-1.13):
 
@@ -27,11 +27,11 @@ The packs follow TypeSafe's [patterns](https://docs.typesafe.ai/patterns), [cook
 - A question whose field is empty is not asked, and is reported as `not asked` rather than as a reading.
 - All questions for one job go out in one request.
 
-Several questions were reworded after live checks on synthetic labeled cases, where the old wording missed and the new one did not. These were small spot checks, not a benchmark, and they support no claim about Jev's accuracy on your data.
+Several questions were reworded after live checks on synthetic labeled cases, where the old wording missed and the new one did not. These were small spot checks, not a benchmark, and they support no claim about provider accuracy on your data.
 
 ## Adding a skill
 
-`s1-migrate-skill` is the procedure for bringing another skill into this plugin: license audit, deciding which steps become judgments and which stay code, the pack, the adapted `SKILL.md`, tests, and documentation. It has no pack of its own. Its `references/pack-template.mjs` is the starting point for a new pack.
+`decision-migrate-skill` is the procedure for bringing another skill into this plugin: license audit, deciding which steps become judgments and which stay code, the pack, the adapted `SKILL.md`, tests, and documentation. It has no pack of its own. Its `references/pack-template.mjs` is the starting point for a new pack.
 ## Install
 
 Each host reads the manifest it knows: Codex loads the portable `plugin.json` at the repository root, while Claude Code and Oh My Pi read their own marketplace catalogs under `.claude-plugin/` and `.omp-plugin/`. All three discover the same seven skills under `skills/`.
@@ -41,110 +41,167 @@ Each host reads the manifest it knows: Codex loads the portable `plugin.json` at
 Add this GitHub repository as a marketplace, then install its plugin:
 
 ```bash
-codex plugin marketplace add JiaWeiXie/jev-enhanced-plugin
-codex plugin add jev-enhanced-plugin@jev-enhanced-plugin
+codex plugin marketplace add JiaWeiXie/decision-enhanced-plugin
+codex plugin add decision-enhanced-plugin@decision-enhanced-plugin
 ```
 
-Restart an existing Codex session after installation so the `s1-` skills become available.
+Restart an existing Codex session after installation so the `decision-` skills become available.
 
 ### Claude Code
 
 Add this GitHub repository as a marketplace, then install its plugin:
 
 ```bash
-claude plugin marketplace add JiaWeiXie/jev-enhanced-plugin
-claude plugin install jev-enhanced-plugin@jev-enhanced-plugin
+claude plugin marketplace add JiaWeiXie/decision-enhanced-plugin
+claude plugin install decision-enhanced-plugin@decision-enhanced-plugin
 ```
 
-The first command registers the marketplace. The second installs this plugin from that marketplace. Restart Claude Code after installation; its seven skills are then available by their `s1-` names.
+The first command registers the marketplace. The second installs this plugin from that marketplace. Restart Claude Code after installation; its seven skills are then available by their `decision-` names.
 
-To update later, run `claude plugin update jev-enhanced-plugin@jev-enhanced-plugin` and restart Claude Code. The plugin package requires Node 20 or newer.
+To update later, run `claude plugin update decision-enhanced-plugin@decision-enhanced-plugin` and restart Claude Code. The plugin package requires Node 20 or newer.
 
-For development only, Claude Code can load the repository for one session with `claude --plugin-dir /absolute/path/to/jev-enhanced-plugin`.
+For development only, Claude Code can load the repository for one session with `claude --plugin-dir /absolute/path/to/decision-enhanced-plugin`.
 
 ### Oh My Pi
 
 Add this repository as a marketplace, verify its catalog entry, then install the plugin globally:
 
 ```bash
-omp plugin marketplace add JiaWeiXie/jev-enhanced-plugin
-omp plugin discover jev-enhanced-plugin
-omp plugin install jev-enhanced-plugin@jev-enhanced-plugin --scope user
+omp plugin marketplace add JiaWeiXie/decision-enhanced-plugin
+omp plugin discover decision-enhanced-plugin
+omp plugin install decision-enhanced-plugin@decision-enhanced-plugin --scope user
 ```
 
-For development, `omp plugin link /absolute/path/to/jev-enhanced-plugin` links the current checkout globally so edits take effect immediately.
+For development, `omp plugin link /absolute/path/to/decision-enhanced-plugin` links the current checkout globally so edits take effect immediately.
 
-The seven skills are discovered under their `s1-` names. Because the repository root includes the Agent Plugins 1.0 `plugin.json`, Oh My Pi routes `skills/` through the `agent-plugins` discovery provider: keep `agent-plugins` enabled in `~/.omp/agent/config.yml`, or add `~/.omp/plugins/node_modules/jev-enhanced-plugin/skills` to `skills.customDirectories` if `agent-plugins` is disabled. To prevent upstream copies from competing for triggers, add `skill:code-review`, `skill:grilling`, `skill:humanizer`, `skill:humanizer-zh-tw`, and `skill:i-have-adhd-zh-tw` to `disabledExtensions`. Restart an existing Oh My Pi session after changing these settings.
+The seven skills are discovered under their `decision-` names. Because the repository root includes the Agent Plugins 1.0 `plugin.json`, Oh My Pi routes `skills/` through the `agent-plugins` discovery provider: keep `agent-plugins` enabled in `~/.omp/agent/config.yml`, or add `~/.omp/plugins/node_modules/decision-enhanced-plugin/skills` to `skills.customDirectories` if `agent-plugins` is disabled. To prevent upstream copies from competing for triggers, add `skill:code-review`, `skill:grilling`, `skill:humanizer`, `skill:humanizer-zh-tw`, and `skill:i-have-adhd-zh-tw` to `disabledExtensions`. Restart an existing Oh My Pi session after changing these settings.
 
 ### Avoiding duplicate skills
 
-Five of these skills adapt upstream skills you may already have installed: `code-review`, `grilling`, `humanizer`, `humanizer-zh-tw`, and `i-have-adhd-zh-tw`. When both copies are listed, the host picks between two near-identical descriptions, and the `s1-` copy often loses. Turn the upstream copy off in the host you use:
+Five of these skills adapt upstream skills you may already have installed: `code-review`, `grilling`, `humanizer`, `humanizer-zh-tw`, and `i-have-adhd-zh-tw`. When both copies are listed, the host picks between two near-identical descriptions, and the `decision-` copy often loses. Turn the upstream copy off in the host you use:
 
 - **Claude Code**: add `"skillOverrides": { "code-review": "off", "grilling": "off", "humanizer": "off", "humanizer-zh-tw": "off", "i-have-adhd-zh-tw": "off" }` to `~/.claude/settings.json`, or cycle them in the `/skills` menu.
 - **OpenAI Codex**: add one `[[skills.config]]` table per upstream skill to `~/.codex/config.toml`, for example `name = "humanizer"` and `enabled = false`.
 - **Oh My Pi**: see `disabledExtensions` above.
 
-Instructions that name a skill directly, such as a `CLAUDE.md` or `AGENTS.md` line saying "use the `humanizer-zh-tw` skill for every response", override descriptions. Point them at the `s1-` names, or the upstream copy keeps winning.
+Instructions that name a skill directly, such as a `CLAUDE.md` or `AGENTS.md` line saying "use the `humanizer-zh-tw` skill for every response", override descriptions. Point them at the `decision-` names, or the upstream copy keeps winning.
 
 ## Requirements
 
-- Node 20 or newer (`package.json` engines); this repo pins 24.18.0 in `mise.toml`.
-- `TYPESAFE_API_KEY` in the environment for live judgments. Skills use live mode by default when the key is available and the payload is safe. Without a key, the skills run their original procedure and report that no judgment was available.
+Node.js 20 or newer. The TypeSafe runtime is vendored so Git marketplace installs
+can invoke the CLI directly. The [one-time migration](docs/MIGRATION.md) uses Python 3.11 or newer.
 
+## Providers
+
+Selection is `--provider`, then `DECISION_PROVIDER`, then `auto`. Live
+`auto` checks for a credential in this order: TypeSafe, OpenAI, Gemini. It
+uses the first configured provider. Each run makes one attempt using that
+provider. Use an explicit provider if the evidence is approved for one destination.
+
+| Provider | Environment | Model |
+| --- | --- | --- |
+| `typesafe` | `TYPESAFE_API_KEY`, optional `TYPESAFE_MODEL` | Defaults to `jev-latest` |
+| `openai` | `OPENAI_API_KEY` | `gpt-6-luna` |
+| `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-decision-1` |
+| `cloudflare` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN`, optional `DECISION_CLOUDFLARE_MODEL` | `clef`, `clef-flash`, `clef-omni` |
+| `ollama` | Optional `DECISION_OLLAMA_MODEL` | `clef` or explicit `clef:cloud` |
+| `custom` | Explicit endpoint, protocol and model below | Set by the operator |
+
+Cloudflare, Ollama and custom require explicit selection. `--model` overrides
+the corresponding model variable for those three providers. The Cloudflare
+adapter accepts up to 64 questions per request. Cloudflare documents context
+windows of 65,536 tokens for Clef, 24,576 for Clef Flash and 64,000 for Clef Omni.
+Packs send text or structured text only, including when using Omni.
+[Clef](https://developers.cloudflare.com/workers-ai/models/clef/) ·
+[Clef Flash](https://developers.cloudflare.com/workers-ai/models/clef-flash/) ·
+[Clef Omni](https://developers.cloudflare.com/workers-ai/models/clef-omni/)
+
+Ollama uses the native System One endpoint at `http://localhost:11434/v1/systemone`
+without credentials. Bring an Ollama daemon (v0.35.1 or newer) with `clef` installed.
+The adapter accepts up to 64 questions. Local choice questions allow up to 26
+options and score questions up to 10 levels.
+An explicit `clef:cloud` selection sends evidence through a pre-existing,
+authenticated Ollama daemon (v0.40.6 or newer) to Ollama's cloud. The CLI sends no pull, login or
+fallback requests. [Ollama Clef](https://ollama.com/library/clef)
+
+### Custom endpoint
+
+Select `custom` and set the model with `--model` or `DECISION_CUSTOM_MODEL`.
+Choose `systemone`, `openai`, `gemini` or `cloudflare` with
+`--custom-protocol` or `DECISION_CUSTOM_PROTOCOL`. Supply exactly one of the following.
+
+- `--custom-endpoint` or `DECISION_CUSTOM_ENDPOINT` supplies the complete URL.
+- `--custom-base` or `DECISION_CUSTOM_BASE_URL` appends `/v1/systemone`,
+  `/v1/decisions` or `/v1beta/decisions` according to the protocol. For
+  Cloudflare, it appends `/ai/run/@cf/cloudflare/<model>` for a supported Clef model
+  to the account or proxy root.
+
+Use a trusted HTTPS endpoint with valid TLS, including for private network addresses.
+HTTP is restricted to credential-free loopback. Userinfo, queries, fragments,
+metadata destinations, link-local addresses and redirects are rejected.
+Custom requests use a direct connection with checked addresses. Keep the
+endpoint and header configuration in trusted process settings.
+
+For HTTPS, `DECISION_CUSTOM_HEADERS` accepts a JSON array of
+`[headerName, environmentVariable]` pairs. For example:
+`[["CF-Access-Client-Id","DECISION_ACCESS_ID"],["CF-Access-Client-Secret","DECISION_ACCESS_SECRET"]]`.
+Bind the references to the process-configured endpoint or provide its exact
+URL in `DECISION_CUSTOM_AUTH_ENDPOINT`. A different endpoint supplied on the CLI
+cannot reuse those credentials. Header names are case-insensitive and must be
+unique. The adapter rejects routing and hop-by-hop headers and never forwards
+a built-in provider's credential.
+
+## Run a pack
+
+```sh
+decision-pack humanizer --state /absolute/path/to/job.json --json
+decision-pack humanizer --state /absolute/path/to/job.json --provider gemini --dry-run
 ```
-mise install
-mise run install
-mise run test
-```
 
-CI runs syntax checks and offline tests on Node 20 and 24, verifies the vendored SDK against its `audit.json` hash, and checks the exact `buildState` field projection for every registered pack. These checks use no API key and make no TypeSafe calls. The boundary tests cover model state, not redaction inside approved text fields or the code excerpts included in review questions.
+Use `node src/cli.mjs` from a checkout, or `npm install -g .` for the
+`decision-pack` binary. `--state -` reads stdin. `--dry-run` previews the
+projected state and questions locally. `--mock <file>` replays typed answers
+locally. `--list` prints available packs.
 
-## Running a pack directly
+Live output identifies the provider and model. Invalid input exits 2. Missing
+credentials, invalid provider configuration, unsafe evidence and unusable
+answers exit 3 with `mode: "unavailable"`. Continue the skill using local
+evidence. The high-confidence secret guard inspects projected state and question
+text. Follow the [shared data rules](skills/decision-advisory.md#sending-text-to-a-third-party)
+for every provider.
 
-```
-node src/cli.mjs <pack> --state state.json --json
-```
-
-The command above runs live and sends the pack's filtered state and questions to TypeSafe. A preview and per-session confirmation are optional. Send only the minimum evidence the pack needs. Never include credentials, tokens, private keys, `.env` contents, customer data, or sensitive personal data. If no safe payload can be built, skip Jev and say why or ask for a safe excerpt. See the [shared data rules](skills/jev-advisory.md#sending-text-to-a-third-party).
-
-Flags: `--state <file|->` (`-` reads the state from stdin), `--dry-run` (build questions, contact nothing), `--mock <file>` (replay recorded answers), `--json`, `--help`, `--list`. The pack's own `validateState` runs before any request is made; a malformed state is reported on stderr and exits 2. `npm install -g .` or `npx` exposes the same CLI as `jev-pack`.
-
-Exit codes: `0` success, `2` input error, `3` no judgment available. Exit 3 also sets `"mode": "unavailable"` in the JSON body, so a skill can distinguish a missing service from a negative answer.
-
-Each pack's `--state` shape is documented at the top of its file in `packs/`. That shape is the job file; the pack's `buildState` derives the state sent to the model. For an optional local preview, `--dry-run` prints `request.state` and `request.questions`. Check both when reviewing the payload, since questions can also contain excerpts. State text is judged as given: a path or a shell command placed in a code field is provenance, and the packs judge only the text supplied.
-
-## Failure behavior
-
-A missing key, a network failure, an HTTP error, or a malformed answer all resolve to the same thing: `unknown`, reported as `unknown`. `unknown` means the absence of a signal. The packs never invent a probability, and service failures do not leak response contents into the report.
+Run `mise run check` and `mise run test` for syntax and regression checks.
+Provider contract tests use synthetic responses. Real provider inference
+requires separate authorization and was not run for this change.
 
 ## Evaluation
 
 `evals/evals.json` holds three synthetic cases comparing each adapted skill against its original: two-axis review retention, `zh-TW` rewriting with evidence preserved, and grilling with unsettled prerequisites. Results live outside this repository in the workspace directory.
 
-These are single runs on synthetic inputs. They measure instruction-following only, and they support no claim about Jev accuracy, calibration, or speed.
+These are single runs on synthetic inputs. They measure instruction-following only, and they support no claim about provider accuracy, calibration, or speed.
 
-The live wording checks described under *How the packs prompt Jev* are separate: a few synthetic labeled cases per question, sent to `jev-latest` to compare candidate wordings and state orders. They were used to choose between wordings, they are not kept in this repository, and the same caveat applies.
+The live wording checks described under *How the packs write judgment questions* are separate: a few synthetic labeled cases per question, sent to `jev-latest` to compare candidate wordings and state orders. They were used to choose between wordings, they are not kept in this repository, and the same caveat applies.
 
 ## License
 
-This plugin is distributed under `MIT AND Apache-2.0 AND CC-BY-SA-4.0`. New code in `src/`, `packs/`, `test/`, and `skills/s1-migrate-skill/` is MIT (`LICENSE`). Adapted material keeps the license it arrived with, listed below. Full texts are in `licenses/`; per-file provenance, source hashes, and the audit of every candidate considered (included, redirected, and excluded) are in `NOTICE` and `audit.json`.
+This plugin is distributed under `MIT AND Apache-2.0 AND CC-BY-SA-4.0`. New code in `src/`, `packs/`, `test/`, and `skills/decision-migrate-skill/` is MIT (`LICENSE`). Adapted material keeps the license it arrived with, listed below. Full texts are in `licenses/`; per-file provenance, source hashes, and the audit of every candidate considered (included, redirected, and excluded) are in `NOTICE` and `audit.json`.
 
 ### Adapted skills
 
 | Packaged skill | Upstream | Provenance / credits | License |
 | --- | --- | --- | --- |
-| `s1-code-review` | [`mattpocock/skills`](https://github.com/mattpocock/skills): `skills/engineering/code-review` | Matt Pocock | MIT |
-| `s1-grilling` | [`mattpocock/skills`](https://github.com/mattpocock/skills): `skills/productivity/grilling` | Matt Pocock | MIT |
-| `s1-humanizer` | [`blader/humanizer`](https://github.com/blader/humanizer) | Siqi Chen; Wikipedia contributors and WikiProject AI Cleanup for the catalog | MIT; CC BY-SA 4.0 for the Wikipedia-derived catalog |
-| `s1-humanizer-zh-tw` | [`kevintsai1202/Humanizer-zh-TW`](https://github.com/kevintsai1202/Humanizer-zh-TW) | Repository maintainer: `kevintsai1202`; Traditional Chinese adaptation of [`op7418/Humanizer-zh`](https://github.com/op7418/Humanizer-zh); source material: `blader/humanizer`; practical sections reference `hardikpandya/stop-slop`; MIT copyright holder: 歸藏; catalog: Wikipedia contributors and WikiProject AI Cleanup | MIT; CC BY-SA 4.0 for the Wikipedia-derived catalog |
-| `s1-i-have-adhd-zh-tw` | [`panda850819/i-have-adhd-zh-tw`](https://github.com/panda850819/i-have-adhd-zh-tw) | Repository maintainer: `panda850819`; non-official Traditional Chinese derivative of [`ayghri/i-have-adhd`](https://github.com/ayghri/i-have-adhd), whose original English version was created by Ayoub Ghriss; MIT copyright retained from Ayoub Ghriss | MIT |
-| `s1-code-simplifier` | `claude-plugins-official/code-simplifier` 1.0.0, `agents/code-simplifier.md` | Anthropic | Apache-2.0 |
+| `decision-code-review` | [`mattpocock/skills`](https://github.com/mattpocock/skills): `skills/engineering/code-review` | Matt Pocock | MIT |
+| `decision-grilling` | [`mattpocock/skills`](https://github.com/mattpocock/skills): `skills/productivity/grilling` | Matt Pocock | MIT |
+| `decision-humanizer` | [`blader/humanizer`](https://github.com/blader/humanizer) | Siqi Chen; Wikipedia contributors and WikiProject AI Cleanup for the catalog | MIT; CC BY-SA 4.0 for the Wikipedia-derived catalog |
+| `decision-humanizer-zh-tw` | [`kevintsai1202/Humanizer-zh-TW`](https://github.com/kevintsai1202/Humanizer-zh-TW) | Repository maintainer: `kevintsai1202`; Traditional Chinese adaptation of [`op7418/Humanizer-zh`](https://github.com/op7418/Humanizer-zh); source material: `blader/humanizer`; practical sections reference `hardikpandya/stop-slop`; MIT copyright holder: 歸藏; catalog: Wikipedia contributors and WikiProject AI Cleanup | MIT; CC BY-SA 4.0 for the Wikipedia-derived catalog |
+| `decision-i-have-adhd-zh-tw` | [`panda850819/i-have-adhd-zh-tw`](https://github.com/panda850819/i-have-adhd-zh-tw) | Repository maintainer: `panda850819`; non-official Traditional Chinese derivative of [`ayghri/i-have-adhd`](https://github.com/ayghri/i-have-adhd), whose original English version was created by Ayoub Ghriss; MIT copyright retained from Ayoub Ghriss | MIT |
+| `decision-code-simplifier` | `claude-plugins-official/code-simplifier` 1.0.0, `agents/code-simplifier.md` | Anthropic | Apache-2.0 |
 
-Every packaged skill in this table is modified from its upstream. The `s1-humanizer` and `s1-humanizer-zh-tw` catalogs include Wikipedia-derived CC BY-SA 4.0 material; their attribution and required redistribution notice are in `NOTICE`. The Apache-2.0 material carries its required statement of changes in `NOTICE`, section 4(b).
+Every packaged skill in this table is modified from its upstream. The `decision-humanizer` and `decision-humanizer-zh-tw` catalogs include Wikipedia-derived CC BY-SA 4.0 material; their attribution and required redistribution notice are in `NOTICE`. The Apache-2.0 material carries its required statement of changes in `NOTICE`, section 4(b).
 
 ### Design reference only
 
-[`devagrawal09/jev-review`](https://github.com/devagrawal09/jev-review) (MIT, Dev Agrawal) informed the evidence shape used by `s1-code-review`: bounded candidate excerpts carrying file and line, an explicit `noMatch` answer, and covering tests supplied as context. No code or prose was copied, and its threshold filtering, list truncation, cross-axis severity ranking, and dashboard were deliberately not adopted.
+[`devagrawal09/jev-review`](https://github.com/devagrawal09/jev-review) (MIT, Dev Agrawal) informed the evidence shape used by `decision-code-review`: bounded candidate excerpts carrying file and line, an explicit `noMatch` answer, and covering tests supplied as context. No code or prose was copied, and its threshold filtering, list truncation, cross-axis severity ranking, and dashboard were deliberately not adopted.
 
 `grill-me` from `mattpocock/skills` is a one-line trampoline into `grilling` and was not copied.
 
@@ -154,4 +211,4 @@ The pattern catalogs in both humanizer skills derive from Wikipedia's ["Signs of
 
 ### Runtime dependency
 
-[`@typesafe-ai/sdk`](https://www.npmjs.com/package/@typesafe-ai/sdk) 0.6.0 is vendored at `src/vendor/typesafe-sdk.mjs` so Git marketplace installations work without an install hook. It remains MIT-licensed by TypeSafe; its license is `licenses/MIT-typesafe-ai-sdk.txt` and its exact source hash is recorded in `audit.json`. Using it requires a TypeSafe account and sends a filtered version of the state you pass to a pack to the TypeSafe API. Add `--dry-run` to inspect the filtered state and questions locally.
+[`@typesafe-ai/sdk`](https://www.npmjs.com/package/@typesafe-ai/sdk) 0.6.0 is vendored at `src/vendor/typesafe-sdk.mjs` so Git marketplace installations work without an install hook. It remains MIT-licensed by TypeSafe; its license is `licenses/MIT-typesafe-ai-sdk.txt` and its exact source hash is recorded in `audit.json`. The TypeSafe provider uses this runtime. Add `--dry-run` to inspect the filtered state and questions locally.

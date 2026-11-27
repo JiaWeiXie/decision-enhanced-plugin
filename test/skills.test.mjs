@@ -5,13 +5,13 @@ import test from 'node:test';
 
 const skillsDirectory = fileURLToPath(new URL('../skills/', import.meta.url));
 const expectedSkills = [
-  's1-code-review',
-  's1-code-simplifier',
-  's1-grilling',
-  's1-humanizer',
-  's1-humanizer-zh-tw',
-  's1-i-have-adhd-zh-tw',
-  's1-migrate-skill',
+  'decision-code-review',
+  'decision-code-simplifier',
+  'decision-grilling',
+  'decision-humanizer',
+  'decision-humanizer-zh-tw',
+  'decision-i-have-adhd-zh-tw',
+  'decision-migrate-skill',
 ];
 
 function readFrontmatter(skill) {
@@ -79,7 +79,7 @@ test('bundled skills expose concise model-invocation metadata', () => {
       // In an unquoted YAML scalar, ": " starts a mapping and " #" a comment.
       assert.ok(!/: | #/.test(description), `${skill} description needs quoting or rewording to stay valid YAML`);
     }
-    assert.match(description, /^(Jev-checked variant of |Port an existing agent skill)/, `${skill} description must lead with its differentiator`);
+    assert.match(description, /^(Judgment-checked variant of |Port an existing agent skill)/, `${skill} description must lead with its differentiator`);
     assert.equal(
       description.match(/\bUse when\b/g)?.length ?? 0,
       1,
@@ -89,7 +89,7 @@ test('bundled skills expose concise model-invocation metadata', () => {
 });
 
 test('shared runtime examples select live mode by omitting preview and replay flags', () => {
-  const advisory = readFileSync(`${skillsDirectory}/jev-advisory.md`, 'utf8');
+  const advisory = readFileSync(`${skillsDirectory}/decision-advisory.md`, 'utf8');
   const runtimeSection = advisory.split('## The command\n')[1].split('\n## ')[0];
   const examples = runtimeSection.split('```bash\n')[1].split('```')[0];
   const commands = examples.split('\n').filter((line) => line.startsWith('node '));
@@ -98,5 +98,22 @@ test('shared runtime examples select live mode by omitting preview and replay fl
   for (const command of commands) {
     assert.match(command, /src\/cli\.mjs" <pack> --state \/absolute\/path\/to\/job\.json --json$/);
     assert.doesNotMatch(command, /--dry-run|--mock/);
+  }
+});
+
+test('the package, host manifests and npm bin agree on the canonical names', () => {
+  const load = path => JSON.parse(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
+  const manifest = load('package.json');
+  const lockfile = load('package-lock.json');
+  const name = 'decision-enhanced-plugin';
+  assert.equal(manifest.name, name);
+  assert.deepEqual(manifest.bin, { 'decision-pack': './src/cli.mjs' });
+  assert.equal(lockfile.name, name);
+  assert.equal(lockfile.packages[''].name, name);
+  assert.deepEqual(lockfile.packages[''].bin, { 'decision-pack': 'src/cli.mjs' });
+  for (const path of ['plugin.json', '.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.omp-plugin/marketplace.json']) {
+    const value = load(path);
+    assert.equal(value.name, name);
+    if (value.plugins) assert.deepEqual(value.plugins.map(plugin => plugin.name), [name]);
   }
 });
