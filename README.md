@@ -142,20 +142,49 @@ Choose `systemone`, `openai`, `gemini` or `cloudflare` with
   Cloudflare, it appends `/ai/run/@cf/cloudflare/<model>` for a supported Clef model
   to the account or proxy root.
 
-Use a trusted HTTPS endpoint with valid TLS, including for private network addresses.
-HTTP is restricted to credential-free loopback. Userinfo, queries, fragments,
-metadata destinations, link-local addresses and redirects are rejected.
-Custom requests use a direct connection with checked addresses. Keep the
-endpoint and header configuration in trusted process settings.
+Use a trusted HTTPS endpoint with valid TLS. The operator of a private server
+or tunnel can read the pack. Only the named Ollama provider uses HTTP, on its
+fixed loopback URL. Custom rejects userinfo, query strings, fragments, metadata
+and link-local destinations. It also rejects raw or encoded dot segments,
+duplicate slashes and encoded slash or backslash separators before path
+normalization. Keep endpoint and header configuration in a trusted process
+environment. Job files and repository configuration cannot provide them.
 
-For HTTPS, `DECISION_CUSTOM_HEADERS` accepts a JSON array of
-`[headerName, environmentVariable]` pairs. For example:
-`[["CF-Access-Client-Id","DECISION_ACCESS_ID"],["CF-Access-Client-Secret","DECISION_ACCESS_SECRET"]]`.
-Bind the references to the process-configured endpoint or provide its exact
-URL in `DECISION_CUSTOM_AUTH_ENDPOINT`. A different endpoint supplied on the CLI
-cannot reuse those credentials. Header names are case-insensitive and must be
-unique. The adapter rejects routing and hop-by-hop headers and never forwards
-a built-in provider's credential.
+Set `DECISION_CUSTOM_AUTH_ENDPOINT` to the exact HTTPS URL to bind auth,
+including its path. If omitted, the binding comes from the process-configured
+endpoint or base and protocol. An override through the CLI must still match
+that origin and path. Each typed reference points to a separate variable in the
+`DECISION_CUSTOM_CREDENTIAL_*` namespace. The reference contains a variable
+name. The actual credential stays in its referenced process variable.
+
+| Typed setting | Header |
+| --- | --- |
+| `DECISION_CUSTOM_BEARER_REF` | `Authorization: Bearer …` |
+| `DECISION_CUSTOM_API_KEY_REF` | `X-Api-Key` |
+| `DECISION_CUSTOM_GEMINI_KEY_REF` | `X-Goog-Api-Key` |
+| `DECISION_CUSTOM_ACCESS_ID_REF` and `DECISION_CUSTOM_ACCESS_SECRET_REF` | Cloudflare Access client ID and secret |
+
+Use at most one of the first three settings. Configure both Access references
+together if your endpoint requires them. To attach optional non-secret
+metadata, set `DECISION_CUSTOM_HEADERS` to a JSON array of
+`[headerName, environmentVariable]` pairs. It accepts only `X-Decision-Client`,
+`X-Decision-Workspace` and `X-Request-Id`, via the
+`DECISION_CUSTOM_HEADER_*` namespace. The same destination binding applies.
+
+### Transport and retention
+
+Requests use a direct connection with checked DNS addresses and require TLS
+verification using Node's bundled trust roots. The transport ignores ambient
+proxy and CA overrides. It refuses redirects and makes zero retries. Response
+bodies are capped at 2 MiB and 32 levels of JSON nesting. The CLI writes a
+local attempt record with the provider, model, origin, credential name and a
+locally generated decision ID. It discards provider error bodies and free-text
+feedback.
+
+OpenAI requests disable prompt caching by selecting explicit mode and sending
+no cache breakpoints. This controls prompt caching only. The service and
+account determine other retention. Local Ollama keeps the pack on the machine
+when local `clef` is selected. [OpenAI Decisions prompt caching](https://developers.openai.com/api/docs/guides/decisions#reuse-shared-input-with-prompt-caching)
 
 ## Run a pack
 
@@ -172,8 +201,8 @@ locally. `--list` prints available packs.
 Live output identifies the provider and model. Invalid input exits 2. Missing
 credentials, invalid provider configuration, unsafe evidence and unusable
 answers exit 3 with `mode: "unavailable"`. Continue the skill using local
-evidence. The high-confidence secret guard inspects projected state and question
-text. Follow the [shared data rules](skills/decision-advisory.md#sending-text-to-a-third-party)
+evidence. The high-confidence secret guard checks projected state and questions
+and scans the final serialized request before transport. Follow the [shared data rules](skills/decision-advisory.md#sending-text-to-a-third-party)
 for every provider.
 
 Run `mise run check` and `mise run test` for syntax and regression checks.

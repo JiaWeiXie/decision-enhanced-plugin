@@ -2,7 +2,6 @@
 """Migrate exact legacy plugin references locally, with a reversible journal."""
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +11,13 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+
+sys.dont_write_bytecode = True
+
+from migration_files import (
+    MigrationError, atomic_replace, check_directory, digest, fixture_root, identity,
+    open_directory, owned_path, read_checked, read_file, user_path, write_journal,
+)
 
 OLD = "jev-enhanced-plugin"
 NEW = "decision-enhanced-plugin"
@@ -29,37 +35,6 @@ OLD_BIN = "jev-pack"
 NEW_BIN = "decision-pack"
 OLD_LINK = f"../lib/node_modules/{OLD}/src/cli.mjs"
 NEW_LINK = f"../lib/node_modules/{NEW}/src/cli.mjs"
-LIMIT = 4 * 1024 * 1024
-
-
-class MigrationError(Exception):
-    """A fixed diagnostic that may be printed without configuration contents."""
-
-
-def digest(value):
-    return hashlib.sha256(value).hexdigest()
-
-
-def owned_path(path, allow_link=False):
-    if path.resolve(strict=False) != path and not (
-        allow_link and path.is_symlink() and path.parent.resolve(strict=True) == path.parent
-    ):
-        raise MigrationError("A target or its parent is a symbolic link.")
-    info = path.lstat()
-    if info.st_uid != os.getuid():
-        raise MigrationError("A migration target is owned by another account.")
-    return info
-
-
-def read_file(path):
-    info = owned_path(path)
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > LIMIT:
-        raise MigrationError("A target is not a singly linked regular file within the size limit.")
-    with path.open("rb") as stream:
-        value = stream.read(LIMIT + 1)
-    if len(value) > LIMIT:
-        raise MigrationError("A target exceeds the size limit.")
-    return value, stat.S_IMODE(info.st_mode)
 
 
 def unique_object(pairs):
@@ -224,13 +199,18 @@ def omp_json(text):
 
 
 def git(repo, *args, allowed=(0,)):
-    env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL") if key in os.environ}
-    env.update(GIT_OPTIONAL_LOCKS="0", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
-               GIT_NO_LAZY_FETCH="1", GIT_TERMINAL_PROMPT="0")
-    result = subprocess.run(
-        ["git", "-C", str(repo), "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        check=False, timeout=30,
-    )
+    path = os.pathsep.join(entry for entry in os.get_exec_path() if os.path.isabs(entry))
+    with tempfile.TemporaryDirectory(prefix="decision-git-home-", dir=Path("/tmp").resolve()) as home:
+        env = {
+            "PATH": path, "LC_ALL": "C", "HOME": home, "XDG_CONFIG_HOME": home,
+            "XDG_DATA_HOME": home, "XDG_CACHE_HOME": home, "XDG_STATE_HOME": home,
+            "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": "",
+        }
+        result = subprocess.run(
+            ["git", "-C", str(repo), "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *args],
+            env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=30,
+        )
     if result.returncode not in allowed:
         raise MigrationError("A scoped Git check failed.")
     return result.stdout
@@ -274,7 +254,7 @@ def remote_config(text):
 
 
 def file_action(path, kind, transform):
-    value, mode = read_file(path)
+    value, mode, info = read_checked(path)
     text = value.decode("utf-8")
     after, edits = transform(text)
     if not edits:
@@ -287,7 +267,7 @@ def file_action(path, kind, transform):
         delta += len(new) - len(old)
     return {
         "kind": kind, "path": str(path), "before": digest(value),
-        "after": digest(after.encode()), "mode": mode, "patches": patches,
+        "after": digest(after.encode()), "mode": mode, "before_identity": identity(info), "patches": patches,
     }
 
 
@@ -362,7 +342,7 @@ def home_actions(home):
 
 
 def npm_action(prefix):
-    owned_path(prefix)
+    fixture_root(prefix)
     path = prefix / "bin" / OLD_BIN
     if not os.path.lexists(path):
         return None
@@ -381,31 +361,6 @@ def npm_action(prefix):
         raise MigrationError("The canonical npm bin is not executable.")
     return {"kind": "npm-bin", "path": str(path)}
 
-
-def atoms(path, value, mode, expected, lock_git):
-    temporary = None
-    try:
-        if lock_git:
-            lock = path.with_name("config.lock")
-            descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            temporary = lock
-            stream = os.fdopen(descriptor, "wb")
-        else:
-            stream = tempfile.NamedTemporaryFile(dir=path.parent, prefix=".decision-migrate-", delete=False)
-            temporary = Path(stream.name)
-        with stream:
-            os.fchmod(stream.fileno(), mode)
-            stream.write(value)
-            stream.flush()
-            os.fsync(stream.fileno())
-        current, current_mode = read_file(path)
-        if digest(current) != expected or current_mode != mode:
-            raise MigrationError("A target changed after preflight.")
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 FILE_ACTIONS = {
@@ -427,6 +382,8 @@ def file_transform(path, kind):
             raise MigrationError("Unexpected Oh My Pi journal path.")
     elif parts[-len(expected):] != expected:
         raise MigrationError("Unexpected file journal path.")
+    if kind != "git-origin":
+        fixture_root(path.parents[len(expected) if kind == "omp-yaml" else len(expected) - 1])
     return transform
 
 
@@ -442,17 +399,23 @@ def transition(action, reverse, check_only=False):
     if action["kind"] == "npm-bin":
         if not path.is_absolute() or path.name != OLD_BIN or path.parent.name != "bin":
             raise MigrationError("Invalid npm bin journal entry.")
-        if reverse:
-            if os.path.lexists(path) or path.parent.resolve(strict=True) != path.parent:
-                raise MigrationError("Legacy npm bin path is already occupied.")
-            check_legacy_bin(path)
-            if not check_only:
-                os.symlink(OLD_LINK, path)
-        else:
-            if npm_action(path.parent.parent) != action:
+        fixture_root(path.parent.parent)
+        with open_directory(path.parent) as parent:
+            if reverse:
+                if os.path.lexists(path):
+                    raise MigrationError("Legacy npm bin path is already occupied.")
+                check_legacy_bin(path)
+            elif npm_action(path.parent.parent) != action:
                 raise MigrationError("The npm bin changed after preflight.")
-            if not check_only:
-                path.unlink()
+            check_directory(path.parent, parent)
+            if not check_only and reverse:
+                os.symlink(OLD_LINK, path.name, dir_fd=parent)
+            elif not check_only:
+                info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+                if (not stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid() or
+                        os.readlink(path.name, dir_fd=parent) != OLD_LINK):
+                    raise MigrationError("The npm bin changed before retirement.")
+                os.unlink(path.name, dir_fd=parent)
         return
     transform = file_transform(path, action["kind"])
     source, dest = ("after", "before") if reverse else ("before", "after")
@@ -480,7 +443,8 @@ def transition(action, reverse, check_only=False):
     if action["kind"] == "git-origin":
         check_worktree_scope(path, [Path(repo) for repo in action["git"]])
     if not check_only:
-        atoms(path, changed, mode, action[source], action["kind"] == "git-origin")
+        expected_identity = action.get("before_identity") if not reverse else None
+        atomic_replace(path, changed, mode, action[source], expected_identity, action["kind"] == "git-origin")
 
 
 def verify(action, reverse):
@@ -545,6 +509,9 @@ def run_actions(actions, reverse):
         recovery_errors = False
         for action in reversed(done):
             try:
+                if reverse and action["kind"] != "npm-bin":
+                    _, _, opened = read_checked(Path(action["path"]))
+                    action["before_identity"] = identity(opened)
                 transition(action, not reverse)
                 verify(action, not reverse)
             except (MigrationError, OSError, subprocess.SubprocessError):
@@ -555,31 +522,25 @@ def run_actions(actions, reverse):
 
 
 def write_backup(path, actions):
-    if path.parent.resolve(strict=True) != path.parent:
-        raise MigrationError("The backup must have a real existing parent directory.")
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as backup:
-        json.dump({"version": 1, "actions": actions}, backup, indent=2)
-        backup.write("\n")
-        backup.flush()
-        os.fsync(backup.fileno())
-    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(parent)
-    finally:
-        os.close(parent)
+    value = json.dumps({"version": 1, "actions": actions}, indent=2) + "\n"
+    write_journal(path, value.encode())
+
+
+class MigrationParser(argparse.ArgumentParser):
+    def error(self, _message):
+        raise MigrationError("Invalid migration argument. Use --help for usage.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = MigrationParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="preview (default)")
     mode.add_argument("--apply", action="store_true", help="write an exclusive backup, then apply")
     mode.add_argument("--rollback", type=Path, metavar="BACKUP", help="restore a migration backup")
     parser.add_argument("--backup", type=Path, help="new owner-only backup path for --apply")
     parser.add_argument("--repo", action="append", type=Path, default=[], help="explicit Git checkout")
-    parser.add_argument("--home", type=Path, help="explicit home for supported host preference files")
-    parser.add_argument("--npm-prefix", type=Path, help="explicit npm global prefix with new package installed")
+    parser.add_argument("--home", type=Path, help="explicit temporary home for host preference fixtures")
+    parser.add_argument("--npm-prefix", type=Path, help="explicit temporary npm prefix fixture")
     args = parser.parse_args()
     targets = args.repo or args.home or args.npm_prefix
     if (args.rollback and (targets or args.backup)) or (not args.rollback and not targets):
@@ -587,7 +548,7 @@ def main():
     if args.apply != bool(args.backup):
         raise MigrationError("--apply requires a new --backup path.")
     if args.rollback:
-        value, backup_mode = read_file(args.rollback.absolute())
+        value, backup_mode = read_file(user_path(args.rollback.absolute()))
         journal = json.loads(value)
         if backup_mode != 0o600 or journal.get("version") != 1 or not isinstance(journal.get("actions"), list):
             raise MigrationError("Invalid or non-private migration backup.")
@@ -595,22 +556,24 @@ def main():
         run_actions(actions, reverse=True)
         print(json.dumps({"mode": "rolled-back", "actions": [action["kind"] for action in actions]}))
         return
-    actions = [repo_action(path, repos) for path, repos in grouped_repos(args.repo).items()]
+    repo_roots = [user_path(repo.absolute()) for repo in args.repo]
+    actions = [repo_action(path, repos) for path, repos in grouped_repos(repo_roots).items()]
     if args.home:
-        actions.extend(home_actions(args.home.absolute()))
+        actions.extend(home_actions(fixture_root(user_path(args.home.absolute()))))
     if args.npm_prefix:
-        actions.append(npm_action(args.npm_prefix.absolute()))
+        actions.append(npm_action(fixture_root(user_path(args.npm_prefix.absolute()))))
     actions = [action for action in actions if action is not None]
     if len({action["path"] for action in actions}) != len(actions):
         raise MigrationError("A target was supplied more than once.")
     if args.apply and actions:
-        backup = args.backup.absolute()
-        if any(backup.is_relative_to(repo.absolute()) for repo in args.repo):
+        backup = user_path(args.backup.absolute())
+        if any(backup.is_relative_to(repo) for repo in repo_roots):
             raise MigrationError("The backup must be outside all target Git checkouts.")
         write_backup(backup, actions)
         run_actions(actions, reverse=False)
     mode_name = "applied" if args.apply else "dry-run"
-    print(json.dumps({"mode": mode_name, "actions": [action["kind"] for action in actions]}))
+    print(json.dumps({"mode": mode_name, "actions": [action["kind"] for action in actions],
+                      "targets": [action["path"] for action in actions]}))
 
 
 if __name__ == "__main__":

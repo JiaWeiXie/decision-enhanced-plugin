@@ -13,8 +13,10 @@ options. The local preview shows both.
 
 - Put the minimum relevant evidence in the fields specified by the skill. Use
   actual text. Providers cannot read a local path or run a command.
-- Fields used only by code stay local. Examples include a review's diff, a
-  reply's watched terms, and a grilling plan's prerequisite mapping.
+- Fields used only by code stay local. Examples include a review's diff and
+  location fields, a reply's watched terms, and a grilling plan's prerequisite
+  and settled mappings. Use non-sensitive IDs for review candidates and grilling
+  questions. The wire can carry these as answer labels or question identifiers.
 - Put reference material before the material being judged. Each question asks
   for one semantic judgment about a named field. Perform exact work such as
   file lookups, matching, and dependency ordering in code.
@@ -83,11 +85,21 @@ authority. See the pack and `packs/shared.mjs` for the question and band definit
 
 ## Sending text to a third party
 
-A live run gives the selected provider the filtered state and question text.
-Review all excerpts, including choice descriptions and question criteria.
-Send only approved material. Credentials, tokens, private keys, `.env` contents,
+A live run gives the selected provider filtered state, question text, criteria
+and identifiers. The pack projection below lists the user-supplied content.
+
+| Pack | State sent | Other user-supplied question content |
+| --- | --- | --- |
+| `review-findings` | `standards`, `spec`, `contextTests`, each finding's `claim` and `evidence` | Candidate ID and excerpt in evidence choices |
+| `humanizer` | Language derived from `locale`, optional `context`, `passages` | |
+| `reply-check` | `request`, optional `requestItems`, the draft opening and full `draft` | |
+| `simplify-gate` | Optional `contract`, `before`, `after` | |
+| `grilling-frontier` | Optional `context` and the eligible questions' text | Eligible question IDs in the TypeSafe and native System One wire |
+
+Review each of those excerpts before sending and include only approved material. Credentials, tokens, private keys, `.env` contents,
 customer data, and sensitive personal data must stay local. The CLI blocks
 common high-confidence credential patterns and configured credential values.
+The guard scans the final serialized request immediately before transport.
 Field projection and this guard cannot classify all sensitive text.
 
 If you cannot prepare a safe excerpt for the selected destination, continue

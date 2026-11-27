@@ -1,19 +1,19 @@
 import { lookup } from 'node:dns';
-import { request as httpRequest } from 'node:http';
-import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
 const metadataNames = new Set(['metadata', 'metadata.google', 'metadata.google.internal', 'instance-data',
   'instance-data.ec2.internal', 'metadata.azure.internal']);
-const deniedHeaders = new Set(['host', 'connection', 'keep-alive', 'te', 'trailer', 'transfer-encoding',
-  'upgrade', 'expect', 'forwarded', 'via', 'referer', 'origin', 'cookie', 'true-client-ip',
-  'x-real-ip', 'x-host', 'x-rewrite-url', 'x-http-method', 'x-http-method-override', 'x-method-override',
-  'x-envoy-original-path', 'x-remote-user', 'cf-worker', 'cdn-loop']);
-const deniedPrefixes = /^(?:proxy-|forwarded-|x-forwarded-|x-original-|x-envoy-|x-accel-|x-amzn-|sec-|content-|cf-connecting-|cf-pseudo-)/;
-const headerName = /^[0-9a-z-]{1,64}$/;
-const configVar = /^[A-Z_][A-Z0-9_]{0,95}$/;
+const allowedHeaders = new Set(['x-decision-client', 'x-decision-workspace', 'x-request-id']);
+const authVariables = [
+  ['authorization', 'DECISION_CUSTOM_BEARER_REF', 'Bearer '],
+  ['x-api-key', 'DECISION_CUSTOM_API_KEY_REF', ''],
+  ['x-goog-api-key', 'DECISION_CUSTOM_GEMINI_KEY_REF', ''],
+  ['cf-access-client-id', 'DECISION_CUSTOM_ACCESS_ID_REF', ''],
+  ['cf-access-client-secret', 'DECISION_CUSTOM_ACCESS_SECRET_REF', ''],
+];
+const credentialRef = /^DECISION_CUSTOM_CREDENTIAL_[A-Z0-9_]{1,64}$/;
+const headerRef = /^DECISION_CUSTOM_HEADER_[A-Z0-9_]{1,64}$/;
 const valuePattern = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
-const maxResponseBytes = 2 * 1024 * 1024;
 
 function blockedAddress(address) {
   if (address.includes('%')) return true;
@@ -28,7 +28,8 @@ function blockedAddress(address) {
     const first = Number.parseInt(canonical.split(':')[0], 16);
     return (canonical.startsWith('::') && canonical !== '::1') ||
       (first >= 0xfe80 && first <= 0xfebf) || first >= 0xff00 ||
-      canonical.startsWith('fd00:ec2:') || canonical.startsWith('64:ff9b:') || first === 0x2002;
+      canonical.startsWith('fd00:ec2:') || canonical === 'fd20:ce::254' ||
+      canonical.startsWith('64:ff9b:') || first === 0x2002;
   }
   return true;
 }
@@ -41,48 +42,94 @@ function invalidConfig() {
   return new Error('Invalid custom provider configuration');
 }
 
-export function customEndpoint(value, path) {
-  if (typeof value !== 'string' || !/^https?:\/\/[^/@]+(?:\/|$)/i.test(value) ||
-    /[?#\\\s\x00-\x1f\x7f]/.test(value)) throw invalidConfig();
+function checkPath(path) {
+  const unsafeEscape = /%(?:[01][0-9a-f]|20|23|25|2f|3f|5c|7f)|%(?![0-9a-f]{2})/i;
+  if (!path.startsWith('/') || path.includes('//') || /[?#\\]|[^\x21-\x7e]/.test(path) ||
+    unsafeEscape.test(path) ||
+    path.split('/').some(segment => /^\.{1,2}$/.test(segment.replace(/%2e/gi, '.')))) throw invalidConfig();
+}
+
+export function customEndpoint(value, path = '') {
+  if (typeof value !== 'string' || /[?#\\]|[^\x21-\x7e]/.test(value)) throw invalidConfig();
+  const parts = /^https:\/\/([^/@%]+)(\/.*)?$/i.exec(value);
+  if (!parts) throw invalidConfig();
+  if (path && !path.startsWith('/')) throw invalidConfig();
+  const rawPath = parts[2] ?? '/';
+  checkPath(rawPath);
+
   let url;
   try {
     url = new URL(value);
   } catch {
     throw invalidConfig();
   }
+  if (url.hostname.endsWith('..')) throw invalidConfig();
   const hostname = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
   if (url.username || url.password || metadataNames.has(hostname) ||
     (isIP(hostname) && blockedAddress(hostname))) throw invalidConfig();
-  if (url.protocol === 'http:' && hostname !== 'localhost' && !loopback(hostname)) throw invalidConfig();
-  if (path) url.pathname = url.pathname.replace(/\/+$/, '') + path;
+  if (isIP(hostname) !== 6) url.hostname = hostname;
+
+  const normalizedPath = rawPath.replace(/%([0-9a-f]{2})/gi, (encoded, code) => {
+    const char = String.fromCharCode(Number.parseInt(code, 16));
+    return /^[a-z0-9_.~-]$/i.test(char) ? char : encoded.toUpperCase();
+  });
+  const composed = path ? normalizedPath.replace(/\/$/, '') + path : normalizedPath;
+  checkPath(composed);
+  url.pathname = composed;
   return url.href;
 }
 
-export function customHeaders(spec, env, endpoint, authEndpoint, reserved, live) {
-  if (spec === undefined) return {};
-  let entries;
+export function customHeaderBindings(env, endpoint, authEndpoint) {
+  const spec = env.DECISION_CUSTOM_HEADERS;
+  let generic;
   try {
-    entries = JSON.parse(spec);
+    generic = spec === undefined ? [] : JSON.parse(spec);
   } catch {
     throw invalidConfig();
   }
-  if (!Array.isArray(entries) || entries.length > 12 ||
-    (entries.length && (new URL(endpoint).protocol !== 'https:' || authEndpoint !== endpoint))) throw invalidConfig();
-  const headers = new Map();
-  const seen = new Set();
-  for (const entry of entries) {
+  if (!Array.isArray(generic) || generic.length > allowedHeaders.size) throw invalidConfig();
+  const bindings = new Map();
+  for (const entry of generic) {
     if (!Array.isArray(entry) || entry.length !== 2 || entry.some(value => typeof value !== 'string')) throw invalidConfig();
     const [original, variable] = entry;
     const name = original.toLowerCase();
-    if (!headerName.test(name) || deniedHeaders.has(name) || deniedPrefixes.test(name) ||
-      !configVar.test(variable) || reserved.includes(variable) || seen.has(name)) throw invalidConfig();
-    seen.add(name);
+    if (!allowedHeaders.has(name) || !headerRef.test(variable) || bindings.has(name)) throw invalidConfig();
+    bindings.set(name, { variable, prefix: '', credential: false });
+  }
+
+  const typed = authVariables.filter(([, name]) => env[name] !== undefined);
+  const apiAuthCount = typed.filter(([header]) => !header.startsWith('cf-access-')).length;
+  const accessCount = typed.length - apiAuthCount;
+  if (apiAuthCount > 1 || accessCount === 1 || ((typed.length || generic.length) && authEndpoint !== endpoint)) {
+    throw invalidConfig();
+  }
+  for (const [header, name, prefix] of typed) {
+    const variable = env[name];
+    if (!credentialRef.test(variable)) throw invalidConfig();
+    bindings.set(header, { variable, prefix, credential: true });
+  }
+  return bindings;
+}
+
+export function resolveCustomHeaders(bindings, env, live) {
+  const headers = {};
+  const credentialNames = [];
+  const values = [];
+  const genericValues = [];
+  for (const [name, { variable, prefix, credential }] of bindings) {
     const value = env[variable];
     if (!live && value === undefined) continue;
     if (typeof value !== 'string' || value.length > 8192 || !valuePattern.test(value)) throw invalidConfig();
-    headers.set(name, value);
+    if (credential) {
+      credentialNames.push(variable);
+      if (/\s/.test(value)) throw invalidConfig();
+      values.push(value);
+    } else {
+      genericValues.push(value);
+    }
+    headers[name] = prefix + value;
   }
-  return Object.fromEntries(headers);
+  return { headers, credentialNames, values, genericValues };
 }
 
 export function checkedLookup(hostname, options, callback, resolve = lookup) {
@@ -95,35 +142,5 @@ export function checkedLookup(hostname, options, callback, resolve = lookup) {
     // Use only the checked addresses when connecting. A later DNS lookup cannot change the target.
     if (options.all) callback(null, addresses);
     else callback(null, addresses[0].address, addresses[0].family);
-  });
-}
-
-export function directFetch(url, { method, headers, body, signal }) {
-  const target = new URL(url);
-  const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
-  return new Promise((resolve, reject) => {
-    const request = send(target, {
-      method, headers, signal, agent: false, lookup: checkedLookup, rejectUnauthorized: true,
-    }, incoming => {
-      const { statusCode: status } = incoming;
-      if (status < 200 || status >= 300) {
-        incoming.destroy();
-        resolve({ ok: false, status, redirected: false });
-        return;
-      }
-      const chunks = [];
-      let size = 0;
-      incoming.on('data', chunk => {
-        size += chunk.length;
-        if (size > maxResponseBytes) incoming.destroy(new Error('Provider response exceeded size limit'));
-        else chunks.push(chunk);
-      });
-      incoming.on('error', reject);
-      incoming.on('end', () => {
-        resolve({ ok: true, status, redirected: false, json: () => JSON.parse(Buffer.concat(chunks).toString('utf8')) });
-      });
-    });
-    request.on('error', reject);
-    request.end(body);
   });
 }

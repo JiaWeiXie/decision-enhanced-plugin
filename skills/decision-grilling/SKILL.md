@@ -88,10 +88,10 @@ that is eligible this round, the pack asks two things:
 - `needs_user_decision`: the question asks for a preference or trade-off that is
   genuinely the user's call.
 
-The decision provider receives only `context` and the text of those eligible questions. Ids,
-prerequisites, `settled`, and blocked questions stay in code. With an empty
-`context`, `already_answered_in_context` is not asked, so paste the relevant
-excerpt of the conversation whenever one exists.
+The state sent contains only `context` and eligible question text. TypeSafe and
+native System One requests can also carry eligible IDs as question identifiers.
+Use non-sensitive IDs. The prerequisite graph, settled list, and blocked
+questions stay local.
 
 Read each answer as a leaning using the display bands in `../decision-advisory.md`: `unknown` means no signal came back for that question. The bands are readability buckets, not decision thresholds.
 

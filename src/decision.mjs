@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { TypeSafeClient, noul, choice, score } from './vendor/typesafe-sdk.mjs';
-import { decisionRequest, decisionResponse, keyNames, pinnedFetch, providerConfig, providerNames } from './decision-providers.mjs';
-import { directFetch } from './decision-custom.mjs';
+import { decisionRequest, decisionResponse, keyNames, providerConfig, providerNames } from './decision-providers.mjs';
+import { checkKeyedAnswer, isRecord, normalizeUsage } from './decision-response.mjs';
+import { resolveCustomHeaders } from './decision-custom.mjs';
+import { directFetch, pinnedFetch } from './decision-transport.mjs';
 
 export { noul, choice, score };
 
@@ -17,10 +20,11 @@ const secretPatterns = [
 ];
 
 export class DecisionError extends Error {
-  constructor(reason = 'judgments_unavailable', status = 0) {
+  constructor(reason = 'judgments_unavailable', status = 0, decision = null) {
     super(reason);
     this.reason = reason;
     this.status = Number.isInteger(status) ? status : 0;
+    this.decision = decision;
   }
 }
 
@@ -37,33 +41,24 @@ export function validateProvider(value) {
 }
 
 const probability = value => Number.isFinite(value) && value >= 0 && value <= 1;
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const knownUsage = ['input_tokens', 'output_tokens', 'total_input_tokens', 'total_output_tokens',
-  'total_tokens', 'total_cached_tokens', 'prompt_tokens', 'completion_tokens'];
-
-function safeUsage(usage) {
-  if (!record(usage)) return null;
-  const entries = knownUsage.filter(name => Number.isSafeInteger(usage[name]) && usage[name] >= 0);
-  return Object.fromEntries(entries.map(name => [name, usage[name]]));
-}
-
 // Reconstruct output fields from validated values. Provider text and extra fields never reach callers.
-function validateAnswers(answers, questions, protocol) {
+function validateAnswers(answers, questions, protocol, wire = false) {
   // The Gemini guide shows two-decimal probabilities that can add up to 1.01.
   const sumTolerance = protocol === 'gemini' ? 0.01 + 4 * Number.EPSILON : 0.001;
-  if (!record(answers) || Object.keys(answers).length !== Object.keys(questions).length) throw new DecisionError();
+  if (!isRecord(answers) || Object.keys(answers).length !== Object.keys(questions).length) throw new DecisionError();
   return Object.fromEntries(Object.entries(questions).map(([id, question]) => {
     const answer = Object.hasOwn(answers, id) ? answers[id] : null;
-    if (!record(answer) || answer.type !== question.type) throw new DecisionError();
+    if (!isRecord(answer) || answer.type !== question.type) throw new DecisionError();
     if (question.type === 'noul') {
-      if (!probability(answer.noul)) throw new DecisionError();
+      if (!checkKeyedAnswer(answer, question.type, [], probability, wire ? protocol : undefined)) throw new DecisionError();
       return [id, { type: 'noul', noul: answer.noul }];
     }
     const keys = question.type === 'choice'
       ? Object.keys(question.criteria)
       : question.criteria.map((_, index) => String(index));
     const distribution = answer.probabilities;
-    if (!record(distribution) || Object.keys(distribution).length !== keys.length ||
+    if (!checkKeyedAnswer(answer, question.type, keys, probability, wire ? protocol : undefined) ||
+      !isRecord(distribution) || Object.keys(distribution).length !== keys.length ||
       keys.some(key => !Object.hasOwn(distribution, key) || !probability(distribution[key])) ||
       Math.abs(keys.reduce((sum, key) => sum + distribution[key], 0) - 1) > sumTolerance ||
       !probability(answer.confidence)) throw new DecisionError();
@@ -126,7 +121,7 @@ function keyFor(provider, env) {
 }
 
 export function createClient({ mode = 'live', provider: requested, env = process.env,
-  model, apiKey, custom, fetchImpl, mockAnswers, timeoutMs = 30_000 } = {}) {
+  model, apiKey, custom, fetchImpl, mockAnswers, onAttempt, timeoutMs = 30_000 } = {}) {
   if (!['live', 'dry-run', 'mock'].includes(mode)) throw new TypeError('Unknown client mode');
   const selection = validateProvider(requested ?? env.DECISION_PROVIDER);
   const live = mode === 'live';
@@ -148,25 +143,58 @@ export function createClient({ mode = 'live', provider: requested, env = process
   } catch {
     throw new DecisionError('invalid_provider_config');
   }
-  const transport = pinnedFetch(config?.endpoint, fetchImpl ??
-    (provider === 'custom' || provider === 'ollama' ? directFetch : globalThis.fetch));
   return {
-    async ask(state, questions) {
+    async ask(state, questions, { signal } = {}) {
       if (mode === 'mock') {
         return { mode, provider: null, answers: validateAnswers(mockAnswers, questions, selection), model: null };
       }
       const request = JSON.parse(JSON.stringify({ state, model: config.model, questions }));
       // Inspect question criteria as well as the state, including text stored only in choices.
-      const customKeys = provider === 'custom' ? Object.values(config.headers)
-        .flatMap(value => [value, value.replace(/^(?:bearer|basic) +/i, '')]) : [];
+      let customAuth;
+      if (provider === 'custom') {
+        try {
+          customAuth = resolveCustomHeaders(config.bindings, env, live);
+        } catch {
+          throw new DecisionError('invalid_provider_config');
+        }
+      }
+      const customKeys = customAuth?.values ?? [];
+      if (customKeys.some(value => providerKeyNames.some(name => env[name]?.trim() === value))) {
+        throw new DecisionError('invalid_provider_config');
+      }
       rejectSecrets(request, env, [key, ...customKeys]);
       if (provider === 'custom') {
         const path = new URL(config.endpoint).pathname;
         let decodedPath = path;
         try { decodedPath = decodeURIComponent(path); } catch { /* Keep the wire path. */ }
-        rejectSecrets([config.endpoint, decodedPath], env, customKeys);
+        rejectSecrets([config.endpoint, decodedPath, customAuth.genericValues], env, customKeys);
       }
-      if (mode === 'dry-run') return { mode, provider, request, answers: null };
+      if (mode === 'dry-run') {
+        const preview = { mode, provider, request, answers: null };
+        rejectSecrets(JSON.stringify(preview, null, 2), env, customKeys);
+        return preview;
+      }
+      const decision = Object.freeze({
+        id: randomUUID(), provider, model: config.model, origin: new URL(config.endpoint).origin,
+        credential: customAuth?.credentialNames ??
+          (keyNames[provider] ? keyNames[provider].find(name => env[name]?.trim() === key) ?? 'explicit' : null),
+      });
+      rejectSecrets(decision, env, [key, ...customKeys]);
+      let payloadBlocked = false;
+      const send = fetchImpl ?? directFetch;
+      const transport = pinnedFetch({
+        endpoint: config.endpoint, headers: customAuth?.headers ?? config.headers,
+      }, (url, options) => {
+        onAttempt?.(decision);
+        return send(url, options);
+      }, body => {
+        try {
+          rejectSecrets([body, JSON.parse(body)], env, [key, ...customKeys]);
+        } catch (error) {
+          payloadBlocked = error instanceof DecisionError;
+          throw error;
+        }
+      });
       try {
         let response;
         if (provider === 'typesafe') {
@@ -174,12 +202,13 @@ export function createClient({ mode = 'live', provider: requested, env = process
             apiKey: key, baseURL: 'https://api.typesafe.ai', defaultModel: config.model,
             fetch: transport, timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: 'off',
           });
-          response = await client.systemOne(request);
+          response = decisionResponse('typesafe', await client.systemOne(request, { signal }), request.questions);
         } else {
           const body = decisionRequest(config.protocol, request, config.limits);
+          const timeout = AbortSignal.timeout(timeoutMs);
           const result = await transport(config.endpoint, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...config.headers },
-            body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+            method: 'POST', body: JSON.stringify(body),
+            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
           });
           if (!result.ok) throw new DecisionError('judgments_unavailable', result.status);
           response = decisionResponse(config.protocol, await result.json(), request.questions);
@@ -187,12 +216,14 @@ export function createClient({ mode = 'live', provider: requested, env = process
         return {
           mode, provider,
           model: provider === 'typesafe' ? safeTypeSafeModel(response?.model, config.model, env, key) : config.model,
-          usage: safeUsage(response?.usage),
-          answers: validateAnswers(response?.answers, request.questions, config.protocol),
+          usage: normalizeUsage(response?.usage, config.protocol),
+          answers: validateAnswers(response?.answers, request.questions, config.protocol, true),
+          decision,
         };
       } catch (error) {
         // Neither provider body, payload, credential, nor exception message is diagnostic output.
-        throw new DecisionError('judgments_unavailable', error?.status);
+        if (payloadBlocked) throw new DecisionError('unsafe_payload');
+        throw new DecisionError('judgments_unavailable', error?.status, decision);
       }
     },
   };

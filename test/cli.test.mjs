@@ -1,15 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 const noNetwork = 'data:text/javascript,' + encodeURIComponent(
-  'globalThis.fetch = () => { throw new Error("Unexpected transport in CLI test"); };',
+  "import http from 'node:http'; import https from 'node:https'; import { syncBuiltinESMExports } from 'node:module';" +
+  "http.request = https.request = globalThis.fetch = () => { throw new Error('Unexpected transport in CLI test'); };" +
+  'syncBuiltinESMExports();',
 );
 const testEnv = { PATH: process.env.PATH };
-function run(pack, input, args = [], extraEnv = {}) {
+function run(pack, input, args = [], extraEnv = {}, cwd) {
   return spawnSync(process.execPath, ['--import', noNetwork, cli, pack, '--state', '-', '--json', ...args], {
-    input, encoding: 'utf8', env: { ...testEnv, ...extraEnv },
+    input, encoding: 'utf8', env: { ...testEnv, ...extraEnv }, cwd,
   });
 }
 function invoke(input, args = []) {
@@ -133,4 +138,48 @@ test('unavailable output does not echo a secret in a local-only review path', ()
   assert.equal(JSON.parse(result.stdout).reason, 'missing_api_key');
   assert.equal(JSON.parse(result.stdout).result, null);
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
+});
+
+test('provider error output contains only safe attempt metadata and no input', () => {
+  const secret = 'SYNTHETIC-RUNTIME-DECISION-AUTH';
+  const text = 'APPROVED-SAMPLE-INPUT';
+  const result = run('humanizer', JSON.stringify({ passages: [text], locale: 'en' }), [], { TYPESAFE_API_KEY: secret });
+  assert.equal(result.status, 3);
+  const output = JSON.parse(result.stdout);
+  const attempt = JSON.parse(result.stderr.split('\n')[0]);
+  assert.equal(attempt.event, 'decision_attempt');
+  assert.equal(attempt.origin, 'https://api.typesafe.ai');
+  assert.equal(attempt.credential, 'TYPESAFE_API_KEY');
+  assert.equal(output.decision.id, attempt.id);
+  assert.equal(output.answers, null);
+  assert.equal(Object.hasOwn(output, 'result'), false);
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret + '|' + text));
+});
+
+test('the explicit CLI auto flag opts into a lone OpenAI key', () => {
+  const result = run('humanizer', '{"passages":["Sample"],"locale":"en"}', ['--provider', 'auto'],
+    { OPENAI_API_KEY: 'SYNTHETIC-OPENAI-EXPLICIT' });
+  assert.equal(result.status, 3);
+  const attempt = JSON.parse(result.stderr.split('\n')[0]);
+  assert.equal(attempt.provider, 'openai');
+  assert.equal(attempt.origin, 'https://api.openai.com');
+  assert.equal(attempt.credential, 'OPENAI_API_KEY');
+  assert.doesNotMatch(result.stdout + result.stderr, /SYNTHETIC-OPENAI-EXPLICIT/);
+});
+
+test('repository files and job state cannot select a provider or supply its credentials', t => {
+  const folder = mkdtempSync(join(tmpdir(), 'decision-config-fixture-'));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const supplied = {
+    DECISION_PROVIDER: 'custom', DECISION_CUSTOM_ENDPOINT: 'https://untrusted.example.test/decision',
+    DECISION_CUSTOM_PROTOCOL: 'systemone', DECISION_CUSTOM_MODEL: 'untrusted-model',
+    TYPESAFE_API_KEY: 'SYNTHETIC-REPO-ONLY-KEY',
+  };
+  writeFileSync(join(folder, '.env'), Object.entries(supplied).map(([k, v]) => k + '=' + v).join('\n'));
+  writeFileSync(join(folder, 'decision.config.json'), JSON.stringify(supplied));
+  const state = JSON.stringify({ passages: ['Synthetic sample'], locale: 'en', ...supplied });
+  const result = run('humanizer', state, [], {}, folder);
+  assert.equal(result.status, 3);
+  assert.equal(JSON.parse(result.stdout).reason, 'missing_api_key');
+  assert.doesNotMatch(result.stdout + result.stderr, /decision_attempt|SYNTHETIC-REPO-ONLY-KEY|untrusted\.example/);
 });

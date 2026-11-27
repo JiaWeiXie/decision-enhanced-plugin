@@ -1,4 +1,5 @@
-import { customEndpoint, customHeaders } from './decision-custom.mjs';
+import { customEndpoint, customHeaderBindings } from './decision-custom.mjs';
+import { checkGeminiResponse, checkSystemOneResponse, hasOnly, unwrapCloudflare } from './decision-response.mjs';
 
 export const endpoints = Object.freeze({
   typesafe: 'https://api.typesafe.ai/v1/systemone',
@@ -36,7 +37,7 @@ export function providerConfig(provider, { env, model, apiKey, custom = {}, live
     if (!cloudflareModels.includes(model) || (live && !/^[a-f0-9]{32}$/i.test(account ?? ''))) throw invalidConfig();
     return {
       model, protocol: 'cloudflare',
-      endpoint: live ? 'https://api.cloudflare.com/client/v4/accounts/' + account + cloudflarePath(model) : null,
+      endpoint: live ? 'https://api.cloudflare.com/client/v4/accounts/' + encodeURIComponent(account) + cloudflarePath(model) : null,
       headers: live ? { Authorization: 'Bearer ' + apiKey } : {},
     };
   }
@@ -57,19 +58,18 @@ export function providerConfig(provider, { env, model, apiKey, custom = {}, live
       !/^[a-z0-9@][a-z0-9_/@.:-]{0,95}$/i.test(model ?? '')) throw invalidConfig();
     if (base && protocol === 'cloudflare' && !cloudflareModels.includes(model)) throw invalidConfig();
     const endpoint = exact ? customEndpoint(exact) : customEndpoint(base, protocolPath(protocol, model));
-    const reserved = [...Object.values(keyNames).flat(), 'CLOUDFLARE_ACCOUNT_ID'];
     let authEndpoint;
     if (env.DECISION_CUSTOM_AUTH_ENDPOINT !== undefined) {
       authEndpoint = customEndpoint(env.DECISION_CUSTOM_AUTH_ENDPOINT);
-    } else if (env.DECISION_CUSTOM_HEADERS !== undefined && env.DECISION_CUSTOM_ENDPOINT) {
+    } else if (env.DECISION_CUSTOM_ENDPOINT) {
       authEndpoint = customEndpoint(env.DECISION_CUSTOM_ENDPOINT);
-    } else if (env.DECISION_CUSTOM_HEADERS !== undefined && env.DECISION_CUSTOM_BASE_URL &&
+    } else if (env.DECISION_CUSTOM_BASE_URL &&
       env.DECISION_CUSTOM_PROTOCOL && (env.DECISION_CUSTOM_PROTOCOL !== 'cloudflare' || env.DECISION_CUSTOM_MODEL)) {
       authEndpoint = customEndpoint(env.DECISION_CUSTOM_BASE_URL,
         protocolPath(env.DECISION_CUSTOM_PROTOCOL, env.DECISION_CUSTOM_MODEL));
     }
-    const headers = customHeaders(env.DECISION_CUSTOM_HEADERS, env, endpoint, authEndpoint, reserved, live);
-    return { model, protocol, endpoint, headers };
+    const bindings = customHeaderBindings(env, endpoint, authEndpoint);
+    return { model, protocol, endpoint, bindings };
   }
   const selected = provider === 'typesafe' ? model ?? (env.TYPESAFE_MODEL?.trim() || 'jev-latest') : models[provider];
   const headers = provider === 'gemini' ? { 'x-goog-api-key': apiKey } : { Authorization: 'Bearer ' + apiKey };
@@ -77,7 +77,6 @@ export function providerConfig(provider, { env, model, apiKey, custom = {}, live
 }
 
 const asText = value => typeof value === 'string' ? value : JSON.stringify(value ?? '');
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function openAIQuestion(name, { type, instructions, criteria }) {
   const text = asText(instructions);
@@ -121,19 +120,22 @@ function openAIAnswers(answers, entries) {
   const byName = new Map(answers.map(answer => [answer?.name, answer]));
   return Object.fromEntries(entries.map(([id, question], index) => {
     const answer = byName.get('q' + index);
-    if (question.type === 'noul' && answer?.type === 'predicate') {
-      return [id, { type: 'noul', noul: answer.probability }];
-    }
-    if (answer?.type !== question.type || !Array.isArray(answer.probabilities)) throw new Error('Invalid answer');
+    if (question.type === 'noul' && answer?.type === 'predicate' &&
+      hasOnly(answer, ['type', 'name', 'probability'])) return [id, { type: 'noul', noul: answer.probability }];
+    const selectedField = question.type === 'score' ? 'score' : 'choice';
+    if (answer?.type !== question.type || !hasOnly(answer, ['type', 'name', 'probabilities', 'confidence', selectedField]) ||
+      !Array.isArray(answer.probabilities)) throw new Error('Invalid answer');
     const probabilities = new Map();
     for (const item of answer.probabilities) {
       const value = item?.value;
-      const validKey = question.type === 'score' ? Number.isInteger(value) : typeof value === 'string';
-      if (!validKey || probabilities.has(String(value))) throw new Error('Invalid probability key');
+      const score = question.type === 'score';
+      const validKey = score ? Number.isInteger(value) && typeof item.label === 'string' : typeof value === 'string';
+      if (!validKey || !hasOnly(item, score ? ['value', 'probability', 'label'] : ['value', 'probability']) ||
+        probabilities.has(String(value))) throw new Error('Invalid probability key');
       probabilities.set(String(value), item.probability);
     }
     return [id, {
-      type: answer.type, choice: answer.choice, score: answer.score,
+      type: answer.type, [selectedField]: answer[selectedField],
       confidence: answer.confidence, probabilities: Object.fromEntries(probabilities),
     }];
   }));
@@ -156,7 +158,8 @@ export function decisionRequest(protocol, { state, model, questions }, limits) {
   if (protocol === 'openai') {
     if (entries.length > 400) throw new Error('Too many questions');
     return {
-      model, input, questions: entries.map(([, question], index) => openAIQuestion('q' + index, question)),
+      model, input, prompt_cache_options: { mode: 'explicit' },
+      questions: entries.map(([, question], index) => openAIQuestion('q' + index, question)),
     };
   }
   if (entries.length > 1000) throw new Error('Too many questions');
@@ -169,29 +172,18 @@ export function decisionRequest(protocol, { state, model, questions }, limits) {
 
 export function decisionResponse(protocol, response, questions) {
   const entries = Object.entries(questions);
-  if (protocol === 'systemone') return response;
-  if (protocol === 'cloudflare') {
-    if (response?.success !== true || !record(response.result)) throw new Error('Invalid response envelope');
-    response = response.result;
-  }
+  if (protocol === 'systemone' || protocol === 'typesafe') return checkSystemOneResponse(response);
   if (protocol === 'openai') {
-    return { answers: openAIAnswers(response?.answers, entries), usage: response.usage };
+    if (!hasOnly(response, ['answers', 'model', 'usage']) || typeof response.model !== 'string' ||
+      !Number.isSafeInteger(response.usage?.input_tokens) || !Number.isSafeInteger(response.usage?.output_tokens)) {
+      throw new Error('Invalid response');
+    }
+    return { answers: openAIAnswers(response.answers, entries), usage: response.usage };
   }
-  if (response?.prompt_feedback?.block_reason || !record(response?.answers) ||
-    Object.keys(response.answers).length !== entries.length) throw new Error('Invalid answers');
+  response = protocol === 'cloudflare' ? unwrapCloudflare(response) : checkGeminiResponse(response);
+  if (Object.keys(response.answers).length !== entries.length) throw new Error('Invalid answers');
   return {
     answers: Object.fromEntries(entries.map(([id], index) => [id, response.answers['q' + index]])),
     usage: response.usage,
-  };
-}
-
-export function pinnedFetch(endpoint, fetchImpl) {
-  return async (url, init) => {
-    if (url !== endpoint || init?.method !== 'POST') throw new Error('Invalid provider endpoint');
-    const response = await fetchImpl(url, { ...init, redirect: 'error' });
-    if (response.redirected || (response.status >= 300 && response.status < 400)) {
-      throw new Error('Provider redirect refused');
-    }
-    return response;
   };
 }

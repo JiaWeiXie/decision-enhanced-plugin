@@ -14,6 +14,7 @@ const answers = {
   severity: { type: 'score', score: 1.2, confidence: 0.6, probabilities: { 0: 0.2, 1: 0.4, 2: 0.4 } },
 };
 const openAI = {
+  model: 'gpt-6-luna',
   answers: [
     { name: 'q2', type: 'score', score: 1.2, confidence: 0.6,
       probabilities: [{ value: 0, label: '0', probability: 0.2 }, { value: 1, label: '1', probability: 0.4 }, { value: 2, label: '2', probability: 0.4 }] },
@@ -21,16 +22,16 @@ const openAI = {
     { name: 'q1', type: 'choice', choice: 'local', confidence: 0.75,
       probabilities: [{ value: 'local', probability: 0.75 }, { value: 'review', probability: 0.25 }] },
   ],
-  usage: { input_tokens: 42, output_tokens: 0, raw: 'PROVIDER-ONLY' },
+  usage: { input_tokens: 42, output_tokens: 0, input_tokens_details: { cached_tokens: 0 } },
 };
 const gemini = {
   answers: { q0: { ...answers.supported, confidence: 0.81 }, q1: answers.path, q2: answers.severity },
-  usage: { total_input_tokens: 42, total_output_tokens: 0, raw: 'PROVIDER-ONLY' },
+  usage: { total_input_tokens: 42, total_output_tokens: 0, input_tokens_by_modality: [{ modality: 'text', tokens: 42 }] },
 };
 const clients = {
   typesafe: {
     key: 'TYPESAFE_API_KEY', url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-latest',
-    response: { answers, model: 'jev-version', usage: { input_tokens: 42 }, extra: 'PROVIDER-ONLY' },
+    response: { answers, model: 'jev-version', usage: { input_tokens: 42, output_tokens: 0 }, feedback: '<script>PROVIDER-ONLY</script>' },
   },
   openai: {
     key: 'OPENAI_API_KEY', url: 'https://api.openai.com/v1/decisions', model: 'gpt-6-luna', response: openAI,
@@ -64,6 +65,8 @@ for (const [provider, fixture] of Object.entries(clients)) {
           assert.deepEqual(body, { state, model: fixture.model, questions });
         } else if (provider === 'openai') {
           assert.deepEqual(JSON.parse(body.input), state);
+          assert.deepEqual(body.prompt_cache_options, { mode: 'explicit' });
+          assert.equal(body.prompt_cache_key, undefined);
           assert.deepEqual(body.questions.map(question => [question.name, question.type]), [
             ['q0', 'predicate'], ['q1', 'choice'], ['q2', 'score'],
           ]);
@@ -151,12 +154,14 @@ test('provider refusals, duplicate names, invalid distributions and non-JSON rem
 });
 
 test('implicit TypeSafe selection never falls through to keys for another provider', async () => {
-  const env = { OPENAI_API_KEY: 'synthetic-openai', GEMINI_API_KEY: 'synthetic-gemini' };
   const fetchImpl = () => assert.fail('non-TypeSafe transport requested');
-  assert.throws(() => createClient({ env, fetchImpl }), { reason: 'missing_api_key' });
-  const preview = await createClient({ mode: 'dry-run', env, fetchImpl }).ask(state, questions);
-  assert.equal(preview.provider, 'typesafe');
-  assert.equal(preview.request.model, 'jev-latest');
+  for (const name of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) {
+    const env = { [name]: 'synthetic-credential-for-' + name };
+    assert.throws(() => createClient({ env, fetchImpl }), { reason: 'missing_api_key' });
+    const preview = await createClient({ mode: 'dry-run', env, fetchImpl }).ask(state, questions);
+    assert.equal(preview.provider, 'typesafe');
+    assert.equal(preview.request.model, 'jev-latest');
+  }
 });
 
 test('Gemini guide rounding is accepted without rewriting or inventing probabilities', async () => {

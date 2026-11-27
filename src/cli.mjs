@@ -17,10 +17,11 @@ function writeOutput(output, json, rendered = '') {
   process.stdout.write(json ? JSON.stringify(output, null, 2) + '\n' : `Mode: ${output.mode}\n${rendered}`);
 }
 
-function unavailable(reason) {
+function unavailable(reason, decision = null) {
   process.exitCode = 3;
   process.stderr.write(`${reason}: continue the skill using local evidence.\n`);
-  return { mode: 'unavailable', provider: null, model: null, usage: null, reason, answers: null };
+  return { mode: 'unavailable', provider: decision?.provider ?? null, model: decision?.model ?? null,
+    decision, usage: null, reason, answers: null };
 }
 
 async function readState(path) {
@@ -96,28 +97,34 @@ async function main() {
       const mockAnswers = values.mock ? await loadMockAnswers(values.mock).catch(() => {
         throw new InputError('Mock fixture must be readable JSON');
       }) : null;
-      const client = createClient({ ...options, mockAnswers });
+      const client = createClient({
+        ...options, mockAnswers,
+        onAttempt: decision => {
+          process.stderr.write(JSON.stringify({ event: 'decision_attempt', ...decision }) + '\n');
+        },
+      });
       response = await client.ask(modelState, questions);
     }
   } catch (error) {
     if (!(error instanceof DecisionError)) throw error;
-    response = unavailable(error.reason);
+    response = unavailable(error.reason, error.decision);
   }
 
   if (mode === 'dry-run' || response.reason === 'unsafe_payload' ||
-    (response.mode === 'unavailable' && provider === 'custom')) {
+    (response.mode === 'unavailable' && (response.decision || provider === 'custom'))) {
     writeOutput(response, json);
     return;
   }
   const result = pack.decide(response, state, {});
   const output = {
     mode: response.mode, provider: response.provider ?? null, model: response.model ?? null,
-    usage: response.usage ?? null, reason: response.reason ?? null, answers: response.answers, result,
+    usage: response.usage ?? null, reason: response.reason ?? null,
+    decision: response.decision ?? null, answers: response.answers, result,
   };
   const rendered = json ? '' : pack.render(result, state);
   if (response.mode === 'unavailable') {
     try {
-      rejectSecrets(json ? result : rendered);
+      rejectSecrets(json ? [result, JSON.stringify(output, null, 2)] : rendered);
     } catch (error) {
       if (!(error instanceof DecisionError)) throw error;
       writeOutput({ ...response, result: null }, json);

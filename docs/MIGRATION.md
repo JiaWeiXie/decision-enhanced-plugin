@@ -18,13 +18,14 @@ and close or restart the affected sessions before editing preferences.
 Keep the legacy install available for rollback.
 The migration script edits preferences. The host manages installs and registries.
 
-For an existing npm global install, install the new package to the same explicit
-prefix with lifecycle scripts disabled. Verify that the new bin runs first.
+For npm, preview the package in a disposable prefix with lifecycle scripts disabled.
 
 ```sh
-npm install --global --offline --ignore-scripts --prefix /absolute/prefix /absolute/decision-enhanced-plugin.tgz
-/absolute/prefix/bin/decision-pack --help
+npm install --global --dry-run --offline --ignore-scripts --prefix /absolute/temporary/prefix /absolute/candidate
 ```
+
+The migration tool does not install the new package. It exercises bin changes only
+in temporary prefixes where both layouts are already present.
 
 ## Preview, apply, verify
 
@@ -45,7 +46,9 @@ script changes the shared origin once and verifies each checkout.
 A different URL, symlink, or ambiguous config needs manual review. The backup
 must be outside the target checkouts.
 
-`--home /absolute/home` looks only at these preference files in the given home.
+`--home /absolute/temporary/home` looks only at the preference files below.
+The tool accepts host and npm fixtures under the system temporary directories.
+Use the host's documented manager for a real installation.
 
 | Host | Managed preference | Preserved |
 | --- | --- | --- |
@@ -61,12 +64,12 @@ The script does not edit shell profiles, credential stores, host registries,
 installed trees or Oh My Pi's credential-bearing lockfile. It does not call
 the host plugin managers.
 
-`--npm-prefix /absolute/prefix` retires the exact legacy bin symlink after
+`--npm-prefix /absolute/temporary/prefix` retires the exact legacy bin symlink after
 checking the replacement package and executable. The legacy package remains
 in the prefix for rollback. The script refuses ambiguous existing names and
 does not overwrite a custom bin target.
 
-Read the first dry-run action list before applying. The final dry run should
+Review the resolved target paths in dry-run output before applying. The final dry run should
 report an empty action list. The script never prints config content,
 credential values, or a Git diff.
 
@@ -83,8 +86,9 @@ the affected setting manually. After restoring preferences, switch back to
 the legacy host installation if necessary.
 
 The automated coverage uses temporary home preference fixtures, disposable Git
-repositories and a real local npm prefix. Native host client installations and
-real provider inference were not exercised in this change.
+repositories, npm dry runs with lifecycle scripts disabled, and a disposable
+npm bin layout. Native host client installation and real provider inference
+were outside this verification.
 
 ## Source and license notes
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -27,6 +27,12 @@ function setup(t) {
   const env = {
     PATH: process.env.PATH,
     HOME: root,
+    XDG_CONFIG_HOME: join(root, 'xdg-config'),
+    XDG_DATA_HOME: join(root, 'xdg-data'),
+    XDG_CACHE_HOME: join(root, 'xdg-cache'),
+    XDG_STATE_HOME: join(root, 'xdg-state'),
+    CLAUDE_CONFIG_DIR: join(root, 'claude'),
+    CODEX_HOME: join(root, 'codex'),
     LC_ALL: 'C.UTF-8',
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
@@ -35,7 +41,9 @@ function setup(t) {
     NPM_CONFIG_CACHE: join(root, 'npm-cache'),
     NPM_CONFIG_UPDATE_NOTIFIER: 'false',
   };
-  const run = (cmd, args, cwd = root) => spawnSync(cmd, args, { cwd, env, encoding: 'utf8', timeout: 30_000 });
+  const run = (cmd, args, cwd = root, envOverride = {}) => spawnSync(cmd, args, {
+    cwd, env: { ...env, ...envOverride }, encoding: 'utf8', timeout: 30_000,
+  });
   const command = (cmd, args, cwd = root) => {
     const result = run(cmd, args, cwd);
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
@@ -43,7 +51,7 @@ function setup(t) {
   };
   const migrate = (...args) => run(script, args);
   const actions = (...args) => JSON.parse(command(script, args)).actions;
-  return { root, env, command, migrate, actions };
+  return { root, env, command, migrate, actions, run };
 }
 
 function repoFixture(fixture, directory = 'repo') {
@@ -75,7 +83,7 @@ test('migration preserves unrelated fixture settings, verifies Git changes, repe
   const omp = join(home, '.omp', 'agent', 'config.yml');
   const privateFile = join(home, '.omp', 'plugins', 'omp-plugins.lock.json');
   const backup = join(root, 'backup.json');
-  write(claude, `{\n  "enabledPlugins": {"${beforeId}": false, "unrelated@other": true},\n  "skillOverrides": {"humanizer":"off"},\n  "env": {"PRIVATE":"${sentinel}","SAMPLE":"${beforeId}"}\n}\n`);
+  write(claude, `{\n  "enabledPlugins": {"${beforeId}": false, "unrelated@other": true},\n  "skillOverrides": {"humanizer":"off"},\n  "env": {"PRIVATE":"${sentinel}","SAMPLE":"${beforeId}","DECISION_CUSTOM_AUTH_ENDPOINT":"https://fixture.example.test/scope"}\n}\n`);
   write(codex, `[plugins."${beforeId}"]\nenabled = true\n[unrelated]\nvalue = "${sentinel}"\n[[skills.config]]\nname="s1-humanizer"\nenabled=false\n[[skills.config]]\nname="humanizer"\nenabled=false\n`);
   write(omp, `disabledExtensions:\n  - "skill:s1-humanizer"\n  - skill:humanizer\n  - skill:decision-humanizer-zh-tw\n  - tool:leave-alone\nconfig: "${sentinel}"\n`);
   write(privateFile, `{"key":"${sentinel}"}\n`);
@@ -98,7 +106,9 @@ test('migration preserves unrelated fixture settings, verifies Git changes, repe
   const migrated = JSON.parse(readFileSync(claude, 'utf8'));
   assert.deepEqual(migrated.enabledPlugins, { [afterId]: false, 'unrelated@other': true });
   assert.deepEqual(migrated.skillOverrides, { humanizer: 'off' });
-  assert.deepEqual(migrated.env, { PRIVATE: sentinel, SAMPLE: beforeId });
+  assert.deepEqual(migrated.env, {
+    PRIVATE: sentinel, SAMPLE: beforeId, DECISION_CUSTOM_AUTH_ENDPOINT: 'https://fixture.example.test/scope',
+  });
   assert.match(readFileSync(codex, 'utf8'), /name="decision-humanizer"\nenabled=false/);
   assert.match(readFileSync(codex, 'utf8'), /name="humanizer"\nenabled=false/);
   assert.match(readFileSync(omp, 'utf8'), /skill:decision-humanizer"\n  - skill:humanizer\n  - skill:decision-humanizer-zh-tw/);
@@ -144,20 +154,39 @@ test('migration fails before mutation for collisions, backup reuse and Git lock,
   assert.equal(readFileSync(config, 'utf8'), changed);
 });
 
-test('old npm bin retires after a real offline new package install and is restored by rollback', t => {
+test('npm package dry run and temporary bin migration leave the canonical entry point usable', t => {
   const { root, command, actions } = setup(t);
-  const legacy = join(root, 'legacy');
   const prefix = join(root, 'global');
-  write(join(legacy, 'package.json'), JSON.stringify({ name: beforeName, version: '0.2.0', bin: { 'jev-pack': './src/cli.mjs' } }));
-  write(join(legacy, 'src/cli.mjs'), '#!/usr/bin/env node\nconsole.log("legacy fixture");\n', 0o700);
+  mkdirSync(join(prefix, 'lib', 'node_modules'), { recursive: true });
+  const sentinelPath = join(root, 'lifecycle-ran');
+  const legacy = join(root, 'legacy');
+  write(join(legacy, 'package.json'), JSON.stringify({ name: beforeName, version: '0.2.0',
+    scripts: { preinstall: 'node write-marker.mjs', prepare: 'node write-marker.mjs' },
+    bin: { 'jev-pack': './src/cli.mjs' } }));
+  write(join(legacy, 'write-marker.mjs'), `import {writeFileSync} from 'node:fs'; writeFileSync(${JSON.stringify(sentinelPath)}, 'ran');`);
+  const oldCLI = '#!/usr/bin/env node\nconsole.log("legacy fixture");\n';
+  write(join(legacy, 'src', 'cli.mjs'), oldCLI, 0o700);
   for (const cwd of [legacy, project]) {
-    const packed = JSON.parse(command('npm', ['pack', '--offline', '--ignore-scripts', '--json', '--pack-destination', root], cwd));
-    command('npm', ['install', '--global', '--offline', '--ignore-scripts', '--prefix', prefix, join(root, packed[0].filename)]);
+    const packageMetadata = JSON.parse(command('npm', ['pack', '--dry-run', '--offline', '--ignore-scripts', '--json'], cwd));
+    assert.equal(packageMetadata.length, 1);
+    assert.equal(packageMetadata[0].files.some(file => file.path === 'src/cli.mjs'), true);
+    command('npm', ['install', '--global', '--dry-run', '--offline', '--ignore-scripts', '--prefix', prefix, cwd]);
   }
+  assert.equal(existsSync(sentinelPath), false);
+  assert.equal(existsSync(join(prefix, 'bin', 'decision-pack')), false);
+
+  const candidatePackage = join(prefix, 'lib', 'node_modules', afterName);
+  const candidateURL = new URL('../src/cli.mjs', import.meta.url).href;
+  write(join(candidatePackage, 'package.json'), readFileSync(join(project, 'package.json')));
+  write(join(candidatePackage, 'src', 'cli.mjs'), `#!/usr/bin/env node\nimport ${JSON.stringify(candidateURL)};\n`, 0o700);
+  write(join(prefix, 'lib', 'node_modules', beforeName, 'src', 'cli.mjs'), oldCLI, 0o700);
+  mkdirSync(join(prefix, 'bin'), { recursive: true });
   const oldBin = join(prefix, 'bin', 'jev-pack');
   const newBin = join(prefix, 'bin', 'decision-pack');
-  const oldTarget = readlinkSync(oldBin);
-  const newTarget = readlinkSync(newBin);
+  const oldTarget = `../lib/node_modules/${beforeName}/src/cli.mjs`;
+  const newTarget = `../lib/node_modules/${afterName}/src/cli.mjs`;
+  symlinkSync(oldTarget, oldBin);
+  symlinkSync(newTarget, newBin);
   assert.match(command(newBin, ['--help']), /^Usage: decision-pack/);
   const backup = join(root, 'npm-backup.json');
   assert.deepEqual(actions('--dry-run', '--npm-prefix', prefix), ['npm-bin']);
@@ -191,4 +220,100 @@ test('linked worktrees require explicit complete scope and share one verified co
   assert.deepEqual(actions('--rollback', backup), ['git-origin']);
   assert.equal(command('git', ['config', '--get', 'remote.origin.url'], linked).trim(), oldOrigin);
   assert.equal(command('git', ['status', '--short'], linked), status);
+});
+
+test('symlinked host paths or Git config targets are refused without outside changes', t => {
+  const fixture = setup(t);
+  const { root, migrate } = fixture;
+  const home = join(root, 'home');
+  const outside = join(root, 'outside');
+  const unrelated = join(outside, 'settings.json');
+  const content = JSON.stringify({ enabledPlugins: { [beforeId]: true }, private: sentinel });
+  write(unrelated, content);
+  mkdirSync(home);
+  symlinkSync(outside, join(home, '.claude'));
+  const journal = join(root, 'backup.json');
+  const result = migrate('--apply', '--home', home, '--backup', journal);
+  assert.equal(result.status, 1);
+  assert.equal(existsSync(journal), false);
+  assert.equal(readFileSync(unrelated, 'utf8'), content);
+  assert.doesNotMatch(result.stderr + result.stdout, new RegExp(sentinel));
+
+  const { repo, config } = repoFixture(fixture);
+  const outsideConfig = join(outside, 'git-config');
+  write(outsideConfig, readFileSync(config));
+  rmSync(config);
+  symlinkSync(outsideConfig, config);
+  assert.equal(migrate('--apply', '--repo', repo, '--backup', journal).status, 1);
+  assert.match(readFileSync(outsideConfig, 'utf8'), new RegExp(beforeName));
+  assert.equal(existsSync(journal), false);
+});
+
+test('Git child processes run in clean temporary homes with networking disabled', t => {
+  const fixture = setup(t);
+  const { root, command, run } = fixture;
+  const { repo } = repoFixture(fixture);
+  const git = command('sh', ['-c', 'command -v git']).trim();
+  const bin = join(root, 'observed-bin');
+  const wrapper = join(bin, 'git');
+  const trace = join(root, 'git-checked');
+  write(wrapper, `#!/bin/sh
+set -eu
+test -n "$HOME"
+test "$HOME" != ${JSON.stringify(root)}
+test "$XDG_CONFIG_HOME" = "$HOME"
+test "$XDG_DATA_HOME" = "$HOME"
+test "$XDG_CACHE_HOME" = "$HOME"
+test "$XDG_STATE_HOME" = "$HOME"
+test "\${GITHUB_TOKEN+found}" = ""
+test "\${OPENAI_API_KEY+found}" = ""
+test "\${HTTPS_PROXY+found}" = ""
+test "\${SSH_AUTH_SOCK+found}" = ""
+test "\${GIT_ALLOW_PROTOCOL-unset}" = ""
+test "$GIT_NO_LAZY_FETCH" = "1"
+printf 'checked\n' >> ${JSON.stringify(trace)}
+exec ${JSON.stringify(git)} "$@"
+`, 0o700);
+  const result = run(script, ['--repo', repo], root, {
+    PATH: bin + ':' + process.env.PATH, GITHUB_TOKEN: sentinel, OPENAI_API_KEY: sentinel,
+    HTTPS_PROXY: 'https://fixture.invalid', SSH_AUTH_SOCK: '/synthetic/path',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.mode, 'dry-run');
+  assert.deepEqual(report.targets, [join(repo, '.git', 'config')]);
+  assert.match(readFileSync(trace, 'utf8'), /^checked/);
+});
+
+test('same-bytes target replacement between preflight and apply is refused', t => {
+  const { root, command, migrate } = setup(t);
+  assert.equal(migrate('--home', '/').status, 1);
+  const home = join(root, 'home');
+  const config = join(home, '.claude', 'settings.json');
+  const content = JSON.stringify({ enabledPlugins: { [beforeId]: true } });
+  write(config, content);
+  const probe = `
+import importlib.util
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+spec = importlib.util.spec_from_file_location("migrator", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+target = Path(sys.argv[2])
+action = m.file_action(target, "claude-settings", m.claude_config)
+replacement = target.with_suffix(".replacement")
+replacement.write_bytes(target.read_bytes())
+replacement.chmod(0o600)
+os.replace(replacement, target)
+try:
+    m.transition(action, False)
+except m.MigrationError as error:
+    assert "changed after preflight" in str(error)
+else:
+    raise AssertionError("target replacement was not rejected")
+`;
+  command('python3', ['-B', '-c', probe, script, config]);
+  assert.equal(readFileSync(config, 'utf8'), content);
 });
