@@ -1,14 +1,14 @@
 ---
-name: s1-migrate-skill
-description: Port an existing agent skill into the jev-enhanced-plugin repository as an `s1-` skill, with a license audit, a judgment pack of TypeSafe Jev questions (Noul, Choice, Score) with its model-state builder, the adapted SKILL.md, live wording checks, tests, and docs. Use when the user asks to migrate, port, or adapt a skill into this plugin, or to add or improve a Jev/System One judgment pack here; for TypeSafe in other applications use the typesafe-ai skill, and not for unrelated new skills.
+name: decision-migrate-skill
+description: Port an existing agent skill into the decision-enhanced-plugin repository as a `decision-` skill, with a license audit, a judgment pack with typed questions (Noul, Choice, Score) with its model-state builder, the adapted SKILL.md, live wording checks, tests, and docs. Use when the user asks to migrate, port, or adapt a skill into this plugin, or to add or improve a judgment pack here; for TypeSafe in other applications use the typesafe-ai skill, and not for unrelated new skills.
 license: MIT
 ---
 
-# Migrate a skill to an `s1-` Jev-enhanced skill
+# Migrate a skill to a `decision-` decision-enhanced skill
 
-Take a skill that already works and add one thing: typed judgments from Jev at the points where the skill previously relied on the agent's own impression. Everything else in the skill stays as it was. The result is a new directory `skills/s1-<name>/` and, usually, a new pack `packs/<pack>.mjs`.
+Take a skill that already works and add one thing: typed judgments from the decision provider at the points where the skill previously relied on the agent's own impression. Everything else in the skill stays as it was. The result is a new directory `skills/decision-<name>/` and, usually, a new pack `packs/<pack>.mjs`.
 
-Read `../jev-advisory.md` first. It is the shared contract every migrated skill points to. Treat `src/cli.mjs`, `src/jev.mjs`, `packs/shared.mjs`, and `references/pack-template.mjs` as the local runtime contract: inspect them before designing or changing a pack. Consult the TypeSafe System One documentation only to resolve a primitive-design question; do not change the vendored SDK or invent a local API from the documentation.
+Read `../decision-advisory.md` first. It is the shared contract every migrated skill points to. Treat `src/cli.mjs`, `src/decision.mjs`, `packs/shared.mjs`, and `references/pack-template.mjs` as the local runtime contract: inspect them before designing or changing a pack. Consult the TypeSafe System One documentation only to resolve a primitive-design question; do not change the vendored SDK or invent a local API from the documentation.
 
 Never copy a skill you have not read in full. Never modify the installed original under `~/.agents`, `~/.claude`, or `~/.omp`; read it and copy from it.
 
@@ -20,7 +20,7 @@ Do this before writing anything. A skill whose license you cannot establish is e
 2. Record the license actually shipped with the component. When the installed copy has no license file, establish the upstream license from its `LICENSE` or another authoritative license declaration and record the evidence; an absent or conflicting license excludes the source.
 3. Compute `shasum -a 256` of every installed source file you read, so a later diff can show upstream drift.
 4. Add a component to `audit.json` with `decision`, `localPath`, `skillName`, `upstream` (`project`, `url`, `path`, `installedAt`, `sha256`), `license` (`spdx`, `holder`, `text`, `evidence`), `adaptations`, and `guardrails`. Copy the shape of an existing `included` component, and identify the source files represented by each recorded hash.
-5. Add a section to `NOTICE` for `skills/s1-<name>/`: upstream, copyright holder, license file, and a `Modifications:` list. Apache-2.0 material requires the notice retention and change notice required by its section 4. CC BY-SA material remains CC BY-SA; preserve its attribution and license notices and do not relicense it.
+5. Add a section to `NOTICE` for `skills/decision-<name>/`: upstream, copyright holder, license file, and a `Modifications:` list. Apache-2.0 material requires the notice retention and change notice required by its section 4. CC BY-SA material remains CC BY-SA; preserve its attribution and license notices and do not relicense it.
 6. If the license text is not yet in `licenses/`, add it as `licenses/<SPDX>-<owner>-<repo>.txt`.
 7. Update the `license` field in `package.json`, root `plugin.json`, and `.claude-plugin/plugin.json` if a new SPDX identifier joins the `AND` expression.
 
@@ -33,7 +33,7 @@ Walk the original skill's procedure step by step and label every step with exact
 | Kind | Examples | What happens to it |
 | --- | --- | --- |
 | Deterministic | substring or pattern match, diff boundary, dependency graph, file lookup, count, order | Stays code. Compute it in the pack's `decide`, independent of any answer. |
-| Semantic | "does this evidence support the claim", "is this passage restating another", "does the draft lead with the answer" | Becomes a Jev question. |
+| Semantic | "does this evidence support the claim", "is this passage restating another", "does the draft lead with the answer" | Becomes an advisory question. |
 | Authority | approve, apply, revert, decide for the user, judge who wrote the text, declare two versions equivalent | Stays with the user or the agent's own verification. Never asked, never derived from a probability. |
 
 Keep the list small. A skill with no semantic step gets no pack; adding one anyway is padding. A semantic question is justified only when its answer changes the agent's own inspection, explanation, or wording without making an authority decision.
@@ -56,7 +56,7 @@ Rules that the existing packs follow and this one must too:
 - Make each `instructions` one narrow, complete judgment that points at the state it reads. Question form ("Does `x` …?") and directive form ("Determine the category of `x`") both appear in TypeSafe's examples; for a Noul, question form makes the yes outcome explicit. Use the structured form `{ question, compare | inspect, focus }` when the judgment compares state fields or needs a scope note; a short, unambiguous instruction may stay a string.
 - Give criteria that separate near misses: `{ what, not_for, examples }` per Choice label or Noul outcome, with the same field names across options. `not_for` names the case a reader would otherwise put on the wrong side.
 - When a "does the evidence support it" judgment can fail in two ways, use a Choice (`supports` / `contradicts` / `says_nothing`) rather than a Noul, so an unrelated quote and a contradicting one stay distinct. Check first in code whether the quote exists at all.
-- Keep questions in English even for non-English state. Jev's primary training language is English; other languages, including CJK, are accepted with lower accuracy, so a zh-TW judgment warrants more human review.
+- Keep questions in English even for non-English state. Provider quality can vary by language. Check zh-TW judgments against the text and the workflow's evidence.
 - Never ask about authorship, machine generation, approval, or equivalence. Never ask what code can check exactly.
 - Never send a watched literal, credential, customer data, or whole file as part of a question.
 - Ask for the narrowest observable act, not an abstract property. "Would a copy editor leave this as it is?" separated stock phrasing from plain text far better than "Is this natural?", and "Does this state a fact, claim, or instruction?" beat "Does this tell the reader something new?".
@@ -65,7 +65,7 @@ Rules that the existing packs follow and this one must too:
 
 ## Step 3b: design the model state
 
-The job file the skill writes and the state Jev reads are different objects. Export `buildState(state)` and return only what the questions reference:
+The job file the skill writes and the state the decision provider reads are different objects. Export `buildState(state)` and return only what the questions reference:
 
 - Leave out every code-only field: diffs used for arithmetic, watch lists, graph ids, prerequisites, file paths, line numbers.
 - Compute what code can compute (an opening paragraph, a language name for a locale tag) and add it as its own field, so the question points at it instead of asking the model to find it.
@@ -75,7 +75,7 @@ The job file the skill writes and the state Jev reads are different objects. Exp
 
 ## Step 3c: check the wording live on synthetic cases
 
-With `TYPESAFE_API_KEY` available, use the live command in `../jev-advisory.md` on 4 to 8 safe synthetic labeled cases (half should lean yes, half no). Send one request per candidate wording, compare two or three wordings, and keep the one that separates the cases best. Skip this wording check if the key is unavailable or the task calls for offline work. Keep example phrases in criteria distinct from the test cases, or the check measures copying. Record the cases and results in the pull request, not in the repository.
+With an approved live provider and the required credentials, use the live command in `../decision-advisory.md` on 4 to 8 safe synthetic labeled cases (half should lean yes, half no). Send one request per candidate wording, compare two or three wordings, and keep the one that separates the cases best. Skip this wording check if the key is unavailable or the task calls for offline work. Keep example phrases in criteria distinct from the test cases, or the check measures copying. Record the cases and results in the pull request, not in the repository.
 
 Write the questions down in the pack header before writing code; they are the reviewable artifact.
 
@@ -105,14 +105,14 @@ Register the module in `packs/registry.mjs`. The CLI discovers packs from there 
 
 ## Step 5: write the adapted skill
 
-Create `skills/s1-<name>/SKILL.md`:
+Create `skills/decision-<name>/SKILL.md`:
 
-- Frontmatter: `name: s1-<name>` (equal to the directory name), a plain-string `description` that retains only the original workflow's real trigger branches, and a `license` that accurately reflects the copied material.
-- Keep the original procedure. Rewrite only what the migration requires: dropped companion dependencies, the `s1-` name, and en-US instructions. Target-language examples, quoted patterns, and copyright names stay literal.
-- Add one section, `## Jev <what it judges> (advisory)`, at the workflow step where the judgment belongs. It must say `Read ../jev-advisory.md first`, name the concrete pack, and show a `job.json` state shape that matches the pack header field for field. Point to the shared command reference instead of copying host-specific command blocks. State how the signals affect this workflow, its hard limits, the minimal text sent to the third party, the shared data rules, the live-by-default runtime when `TYPESAFE_API_KEY` is available and the payload is safe, and the exit-3 fallback.
+- Frontmatter: `name: decision-<name>` (equal to the directory name), a plain-string `description` that retains only the original workflow's real trigger branches, and a `license` that accurately reflects the copied material.
+- Keep the original procedure. Rewrite only what the migration requires: dropped companion dependencies, the `decision-` name, and en-US instructions. Target-language examples, quoted patterns, and copyright names stay literal.
+- Add one section, `## Judgment check <what it judges> (advisory)`, at the workflow step where the judgment belongs. It must say `Read ../decision-advisory.md first`, name the concrete pack, and show a `job.json` state shape that matches the pack header field for field. Point to the shared command reference instead of copying host-specific command blocks. State how the signals affect this workflow, its hard limits, the minimal text sent to the third party, the shared data rules, the live-by-default runtime when the selected provider is configured and the payload is safe, and the exit-3 fallback.
 - End with an attribution line: `Adapted from <upstream> by <holder> (<SPDX>). See ../../NOTICE and ../../audit.json.`
 
-If the original keeps a large reference catalog, split it into `skills/s1-<name>/references/` and copy it verbatim, as `s1-humanizer` does.
+If the original keeps a large reference catalog, split it into `skills/decision-<name>/references/` and copy it verbatim, as `decision-humanizer` does.
 
 Do not add a second convention. The six existing skills are the style guide: read the closest one before writing.
 
@@ -131,12 +131,12 @@ Test through `decide` and `render` output, not through property-name scans or qu
 - No manifest entry is needed: hosts discover `skills/*/SKILL.md`; confirm the actual target host does so before claiming availability.
 - Add a row to both README tables: `## Skills` (skill, pack, what the pack answers) and `### Adapted skills` (upstream, author, license).
 - Add a dry-run fixture `evals/<pack>-state.json` in the pack's state shape, with synthetic text only. It is what Step 8 runs, and it doubles as the example a reader copies into `job.json`.
-- Add a replay fixture `evals/<pack>-mock.json`: `{"answers": {…}}` with a well-formed value for **every** question id. `src/jev.mjs` validates a replay as strictly as a live response, so one missing or mistyped id makes the whole run degrade with exit 3. The `unknown` path is covered by the Step 6 tests, not by this fixture.
+- Add a replay fixture `evals/<pack>-mock.json`: `{"answers": {…}}` with a well-formed value for **every** question id. `src/decision.mjs` validates a replay as strictly as a live response, so one missing or mistyped id makes the whole run degrade with exit 3. The `unknown` path is covered by the Step 6 tests, not by this fixture.
 - Add a synthetic case to `evals/evals.json` comparing the adapted skill against the original on the behaviors the pack is meant to support. Results stay outside the repo.
 
 ## Step 8: verify offline
 
-For migration verification, run the project's targeted pack tests and syntax check, then use the shared CLI instructions in `../jev-advisory.md` with the concrete `<pack>`, first with `--dry-run` and then with the replay fixture. The dry run must exit 0 and print the exact Step 3 questions and the Step 3b model state with `answers: null`; a validation error (exit 2) means the fixture and pack header disagree. The replay must exit 0, preserve every input item, and show every signal as advisory. Use only synthetic fixtures in this step. These offline checks do not apply to normal skill usage. Step 3c is a separate synthetic-only wording check.
+For migration verification, run the project's targeted pack tests and syntax check, then use the shared CLI instructions in `../decision-advisory.md` with the concrete `<pack>`, first with `--dry-run` and then with the replay fixture. The dry run must exit 0 and print the exact Step 3 questions and the Step 3b model state with `answers: null`; a validation error (exit 2) means the fixture and pack header disagree. The replay must exit 0, preserve every input item, and show every signal as advisory. Use only synthetic fixtures in this step. These offline checks do not apply to normal skill usage. Step 3c is a separate synthetic-only wording check.
 
 Report what was migrated, what was deliberately left out, and the license decision, in that order.
 

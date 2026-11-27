@@ -1,10 +1,10 @@
 ---
-name: s1-i-have-adhd-zh-tw
-description: Jev-checked variant of i-have-adhd-zh-tw. Reply in natural Taiwan Traditional Chinese (zh-TW) that opens with the answer, the result, or the one action the user must take, uses Taiwanese terms, keeps code, paths, and APIs verbatim, and drops openers, recaps, and sign-offs; an optional TypeSafe Jev check reviews long replies for answer-first, delegation, and coverage. Use when replying to the user in zh-TW for coding, debugging, planning, research, or chat (繁體中文回覆、台灣用語、先講結論); to edit an existing zh-TW article use s1-humanizer-zh-tw.
+name: decision-i-have-adhd-zh-tw
+description: Judgment-checked variant of i-have-adhd-zh-tw. Reply in natural Taiwan Traditional Chinese (zh-TW) that opens with the answer, the result, or the one action the user must take, uses Taiwanese terms, keeps code, paths, and APIs verbatim, and drops openers, recaps, and sign-offs; an optional advisory check reviews long replies for answer-first, delegation, and coverage. Use when replying to the user in zh-TW for coding, debugging, planning, research, or chat (繁體中文回覆、台灣用語、先講結論); to edit an existing zh-TW article use decision-humanizer-zh-tw.
 license: MIT
 ---
 
-# s1-i-have-adhd-zh-tw
+# decision-i-have-adhd-zh-tw
 
 Make replies easy to start reading, fast to scan, and directly actionable. Brevity is the means, not the goal; correctness, safety, necessary detail, and agent autonomy come first.
 
@@ -138,13 +138,13 @@ When the rules above are not concrete enough, write like the right-hand column:
 4. When the same attempt keeps failing, use the observed failures to revise the hypothesis before retrying; name missing evidence instead of guessing the cause.
 5. This response style cannot diagnose, treat, or certify ADHD in anyone.
 
-## Jev reply check (advisory, optional)
+## Reply check (advisory, optional)
 
 This step is optional; do not run it on every reply. It is worth running in only two cases: the draft is long and structurally complex, or the user explicitly asked for an audit of this reply. For everyday short replies, self-check against "Pre-send checklist" below; an extra round trip only slows the reply down.
 
-Read `../jev-advisory.md` first for the command, third-party data rules,
+Read `../decision-advisory.md` first for the command, third-party data rules,
 exit-3 fallback, and advisory limits. Run the `reply-check` pack live by default
-when `TYPESAFE_API_KEY` is available and the payload is safe.
+when the selected provider is configured and the payload is safe.
 
 When you do run it, write the draft and the original request into `job.json`:
 
@@ -159,7 +159,7 @@ When you do run it, write the draft and the original request into `job.json`:
 
 `requestItems` is optional and worth filling in when the request asks for more than one thing: copy each ask as its own string. The pack then asks about each item separately and reports which one the draft may have skipped, which is more reliable than one question about "every item". Without it, coverage is a single holistic reading.
 
-`banned` is optional. When supplied, the CLI does the string matching in code and returns `result.literals`: the count and positions (index, line, column) of each term. The list itself is never sent to Jev.
+`banned` is optional. When supplied, the CLI does the string matching in code and returns `result.literals`: the count and positions (index, line, column) of each term. The list itself is never sent to the decision provider.
 
 The pack cuts the draft's opening paragraph (everything before the first blank line) in code and asks the answer-first question about that paragraph alone, so put the answer before the first blank line.
 
@@ -167,7 +167,7 @@ Banned words, banned sentence patterns, the em dash `——`, parenthetical asid
 
 A match is a candidate, not a violation. The pack does not parse Markdown and makes no ruling; this skill decides the exceptions. Strings inside quoted source text, code, commands, paths, API names, error messages, and official product names stay verbatim, exactly as in the "Banned words, sentence patterns, and punctuation" section.
 
-The judgment covers semantic questions: does the first paragraph really lead with the answer (`answer_first`), was work the agent could do handed back to the user (`delegates_back`), does the reply cover what this turn's request actually asked for (`covers_request`), and does it add scope the user never asked for (`adds_unrequested_scope`). Jev reads Traditional Chinese with lower accuracy than English, so treat each reading as a prompt to reread your draft, not as a finding.
+The judgment covers semantic questions: does the first paragraph really lead with the answer (`answer_first`), was work the agent could do handed back to the user (`delegates_back`), does the reply cover what this turn's request actually asked for (`covers_request`), and does it add scope the user never asked for (`adds_unrequested_scope`). Providers can vary in how they read Traditional Chinese, so treat each reading as a prompt to reread your draft, not as a finding.
 
 The pre-send checklist and output contract remain decisive. A judgment neither rewrites the
 reply nor approves it. Do not send secrets, credentials, or private user data; use the normal

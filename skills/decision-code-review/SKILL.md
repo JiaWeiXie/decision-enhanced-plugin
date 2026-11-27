@@ -1,6 +1,6 @@
 ---
-name: s1-code-review
-description: Jev-checked variant of code-review. Two-axis review (repo Standards + Spec) of a working tree, PR, branch, or diff since a commit, tag, or merge-base, where TypeSafe Jev checks each finding's quoted evidence and its basis on its own axis, and never drops a finding. Use when the user asks to review code, a PR, a branch, or uncommitted changes, asks "what changed since X", asks whether an implementation matches its spec or issue, or says 幫我 review 或 code review; prefer it over an unaugmented code-review skill. Not for fixing bugs or writing code.
+name: decision-code-review
+description: Judgment-checked variant of code-review. Two-axis review (repo Standards + Spec) of a working tree, PR, branch, or diff since a commit, tag, or merge-base, where advisory checks each finding's quoted evidence and its basis on its own axis, and never drops a finding. Use when the user asks to review code, a PR, a branch, or uncommitted changes, asks "what changed since X", asks whether an implementation matches its spec or issue, or says 幫我 review 或 code review; prefer it over an unaugmented code-review skill. Not for fixing bugs or writing code.
 license: MIT
 ---
 
@@ -78,9 +78,9 @@ Both briefs require: read tests that cover the changed behavior, including uncha
 
 Require each active reviewer to account for every changed file or hunk, noting inspected material with no findings and any coverage limits. Completion is coverage of the captured change set, not reaching a word count.
 
-### 5. Jev pass on the findings (advisory)
+### 5. Judgment pass on the findings (advisory)
 
-Read `../jev-advisory.md` first. After both reports, create a task-local `job.json` at an absolute path:
+Read `../decision-advisory.md` first. After both reports, create a task-local `job.json` at an absolute path:
 
 Populate it with the reports' findings and their minimal supporting text:
 
@@ -102,8 +102,8 @@ Populate it with the reports' findings and their minimal supporting text:
 }
 ```
 
-Jev cannot open a file, resolve a path, or run a command, so every field that is
-supposed to be evidence must contain the actual text. The pack sends Jev only each
+A decision provider cannot open a file, resolve a path, or run a command, so every field that is
+supposed to be evidence must contain the actual text. The pack sends the decision provider only each
 finding's `claim` and `evidence`, the candidate excerpts (inside the options of the
 location question), and the non-empty `standards`, `spec`, and `contextTests`. `diff`,
 `axis`, `file`, and `line` feed the code checks below and never leave the machine;
@@ -118,7 +118,7 @@ an excerpt back. Paste the minimum that answers the question; leave whole files 
 `contextTests` is optional and worth filling in. Gather the tests that exercise the changed behavior, whether or not the diff touched them: search the test tree by symbol and by file name, not by what appears in the diff, and paste their text. **A test's absence from the diff does not mean the behavior is untested**, and a diff that changes no tests is not by itself a finding. If you looked and found nothing, say that you looked. When `contextTests` is absent the pack reports `testCoverage.status: "unknown"` for every finding; that is missing information, never a test gap, and you must not report it as one.
 
 Use the shared command with the `review-findings` pack. Run live by default when
-`TYPESAFE_API_KEY` is available and the minimal payload meets the shared data rules.
+the selected provider is configured and the minimal payload meets the shared data rules.
 
 Before asking anything, the pack checks in code whether each finding's `evidence`
 appears verbatim in `diff` (`evidenceQuoted`: `in diff`, `not in diff`, or `unknown`).
@@ -148,7 +148,7 @@ the finding is right.
 
 Use the result only to:
 
-- label a finding inside its own axis (`Jev (advisory, p=0.34): evidence may not support this claim`);
+- label a finding inside its own axis (`Decision check (advisory, p=0.34): evidence may not support this claim`);
 - when `evidenceRelation` is `contradicts`, reread the quoted code against the claim before
   reporting; the finding stays in its axis whatever you conclude, and a rewrite is yours to make;
 - attach the chosen excerpt to the finding so the reader can check it;
@@ -160,7 +160,7 @@ Use the result only to:
 
 Never let a judgment delete a finding, filter findings by a probability threshold, truncate the list, change a finding's axis, or rank findings across axes by severity. Cross-axis reranking is the exact thing the two-axis split exists to prevent, and a threshold silently turns an advisory number into a gate.
 
-If Jev is unavailable, complete all active review axes from evidence and follow the shared reporting rules.
+If the decision provider is unavailable, complete all active review axes from evidence and follow the shared reporting rules.
 
 ### 6. Aggregate
 
@@ -168,7 +168,7 @@ Present the two reports under `## Standards` and `## Spec` headings, verbatim or
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
-Account for every grounded finding in its original axis, report review coverage limits, and distinguish unavailable spec coverage from a clean Spec result. Follow the shared rules for reporting the actual Jev mode; dry-run and mock are not live judgments.
+Account for every grounded finding in its original axis, report review coverage limits, and distinguish unavailable spec coverage from a clean Spec result. Follow the shared rules for reporting the actual decision mode; dry-run and mock are not live judgments.
 
 ## Why two axes
 

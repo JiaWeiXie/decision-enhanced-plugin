@@ -9,5 +9,5 @@ export const packs = Object.fromEntries(
 );
 
 export function getPack(name) {
-  return packs[name] ?? null;
+  return Object.hasOwn(packs, name) ? packs[name] : null;
 }

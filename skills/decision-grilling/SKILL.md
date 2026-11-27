@@ -1,6 +1,6 @@
 ---
-name: s1-grilling
-description: Jev-checked variant of grilling. Stress-test a plan, design, or decision through a dependency-tree interview that asks only questions whose prerequisites are settled, recommends an answer to each, and waits per round; TypeSafe Jev flags questions the conversation already answered. Use when the user says "grill me", "poke holes", "challenge my plan", "stress-test this", "what am I missing", or 幫我挑毛病、質疑我的計畫; not for writing or implementing the plan.
+name: decision-grilling
+description: Judgment-checked variant of grilling. Stress-test a plan, design, or decision through a dependency-tree interview that asks only questions whose prerequisites are settled, recommends an answer to each, and waits per round; the decision provider flags questions the conversation already answered. Use when the user says "grill me", "poke holes", "challenge my plan", "stress-test this", "what am I missing", or 幫我挑毛病、質疑我的計畫; not for writing or implementing the plan.
 license: MIT
 ---
 
@@ -56,9 +56,9 @@ Finding environment facts is your job, not the user's. Obtain facts available fr
 
 The session is done when the frontier is empty: every reachable node is settled or explicitly abandoned with the user's reason, every dependency has an owner, and nothing material is silently assumed. Summarize the settled tree and ask the user to confirm the shared understanding before acting.
 
-## Checking the frontier with Jev (advisory)
+## Checking the frontier with the decision provider (advisory)
 
-Read `../jev-advisory.md` first; it covers the command, degradation, and the limits.
+Read `../decision-advisory.md` first; it covers the command, degradation, and the limits.
 
 Before you send a round, write the tree to `job.json`:
 
@@ -74,8 +74,8 @@ Before you send a round, write the tree to `job.json`:
 }
 ```
 
-Run the shared CLI command from `../jev-advisory.md` with pack `grilling-frontier`.
-Run live by default when `TYPESAFE_API_KEY` is available and the minimal `context`
+Run the shared CLI command from `../decision-advisory.md` with pack `grilling-frontier`.
+Run live by default when the selected provider is configured and the minimal `context`
 excerpt meets the shared data rules. Use `--json` for programmatic reads.
 
 The frontier itself is graph arithmetic: a question is on the frontier when every id in its `prerequisites` appears in `settled`. The pack computes that literally. Its state validator requires a `questions` array; `settled` defaults to `[]`, and `context` should be the minimum relevant conversation excerpt. Do not use a judgment to alter eligibility.
@@ -88,18 +88,18 @@ that is eligible this round, the pack asks two things:
 - `needs_user_decision`: the question asks for a preference or trade-off that is
   genuinely the user's call.
 
-Jev receives only `context` and the text of those eligible questions. Ids,
-prerequisites, `settled`, and blocked questions stay in code. With an empty
-`context`, `already_answered_in_context` is not asked, so paste the relevant
-excerpt of the conversation whenever one exists.
+The state sent contains only `context` and eligible question text. TypeSafe and
+native System One requests can also carry eligible IDs as question identifiers.
+Use non-sensitive IDs. The prerequisite graph, settled list, and blocked
+questions stay local.
 
-Read each answer as a leaning using the display bands in `../jev-advisory.md`: `unknown` means no signal came back for that question. The bands are readability buckets, not decision thresholds.
+Read each answer as a leaning using the display bands in `../decision-advisory.md`: `unknown` means no signal came back for that question. The bands are readability buckets, not decision thresholds.
 
 Use a signal only to reread the question: confirm whether context already answers it, rewrite it, or move it to a later round yourself. Preserve the ledger until evidence or the user's answer settles the node.
 
 The judgments never answer a question, never mark one settled, and never choose for the user. A decision leaves the frontier when the user decides it, and only then. If the pass did not run, ask the round anyway; the design tree is the skill, the judgments are a proofreader.
 
-`mode: "not-needed"` means there were no open questions to ask Jev about, not that the tree is complete. Exit code 3 with `mode: "unavailable"` means no usable Jev result came back: ask the round as written and say the advisory check did not run, unless the user requested a strict output contract.
+`mode: "not-needed"` means there were no open questions to ask the decision provider about, not that the tree is complete. Exit code 3 with `mode: "unavailable"` means no usable judgment came back: ask the round as written and say the advisory check did not run, unless the user requested a strict output contract.
 
 ---
 

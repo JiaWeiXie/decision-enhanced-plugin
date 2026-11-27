@@ -1,19 +1,19 @@
 {
-  "name": "jev-enhanced-plugin",
+  "name": "decision-enhanced-plugin",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Third-party skills enhanced with advisory TypeSafe Jev judgments: two-axis code review, prose humanizing (en/zh-TW), reply checking, simplification gating, and design-tree grilling, plus a procedure for migrating further skills.",
+  "description": "Third-party skills enhanced with advisory typed provider judgments: two-axis code review, prose humanizing (en/zh-TW), reply checking, simplification gating, and design-tree grilling, plus a procedure for migrating further skills.",
   "license": "MIT AND Apache-2.0 AND CC-BY-SA-4.0",
   "engines": {
     "node": ">=20"
   },
   "bin": {
-    "jev-pack": "./src/cli.mjs"
+    "decision-pack": "./src/cli.mjs"
   },
   "omp": {},
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "jev": "node src/cli.mjs"
+    "decision": "node src/cli.mjs"
   }
 }

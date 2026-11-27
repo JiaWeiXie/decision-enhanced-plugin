@@ -19,7 +19,7 @@
  */
 
 // Replace `noul` and `readNoul` together when the designed question is Choice or Score.
-import { noul } from "../src/jev.mjs";
+import { noul } from "../src/decision.mjs";
 import {
  ADVISORY_NOTE,
  asArray,

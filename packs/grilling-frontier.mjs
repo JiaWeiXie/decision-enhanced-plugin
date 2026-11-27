@@ -6,7 +6,7 @@
  * answer is exact, and a probability must never override it — an unmet
  * prerequisite keeps a question blocked no matter what any judgment says.
  *
- * Jev is used for one thing only: noticing that `context` may already contain
+ * the decision provider is used for one thing only: noticing that `context` may already contain
  * the user's answer, or that a question needs a decision only the user can make.
  * Both are advisory. Nothing in this pack moves an id into `settled`; settling a
  * question is the user's act.
@@ -27,7 +27,7 @@
  * already-answered question is asked only when `context` has text.
  */
 
-import { noul } from "../src/jev.mjs";
+import { noul } from "../src/decision.mjs";
 import {
  ADVISORY_BANDS, ADVISORY_NOTE,
  asArray,
@@ -68,7 +68,7 @@ export function validateState(state) {
   if (!isPlainObject(question)) return `State requires \`${at}\` to be an object`;
   if (typeof question.text !== "string") return `State requires \`${at}.text\` to be a string`;
   const id = idOf(question, index);
-  if (ids.has(id)) return `State requires unique question ids (\`${id}\` repeats at \`${at}\`)`;
+  if (ids.has(id)) return `State requires unique question ids at \`${at}\``;
   ids.add(id);
   if (question.prerequisites !== undefined) {
    if (!Array.isArray(question.prerequisites)) return `State requires \`${at}.prerequisites\` to be an array`;

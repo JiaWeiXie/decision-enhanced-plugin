@@ -1,6 +1,6 @@
 ---
-name: s1-humanizer-zh-tw
-description: Jev-checked variant of humanizer-zh-tw. Rewrite AI-sounding or translationese Taiwan Traditional Chinese (zh-TW) prose, cutting 進行/針對/透過 filler, mainland terms, triads, hype, and dash overuse while keeping every claim; TypeSafe Jev flags passages a Taiwanese editor would still reword. Use when asked to 潤稿、改寫、去 AI 味、修翻譯腔、讓文字更自然, or to edit zh-TW articles, docs, announcements, or release notes; for chat replies use s1-i-have-adhd-zh-tw, and not for watermark or invisible-Unicode removal.
+name: decision-humanizer-zh-tw
+description: Judgment-checked variant of humanizer-zh-tw. Rewrite AI-sounding or translationese Taiwan Traditional Chinese (zh-TW) prose, cutting 進行/針對/透過 filler, mainland terms, triads, hype, and dash overuse while keeping every claim; the decision provider flags passages a Taiwanese editor would still reword. Use when asked to 潤稿、改寫、去 AI 味、修翻譯腔、讓文字更自然, or to edit zh-TW articles, docs, announcements, or release notes; for chat replies use decision-i-have-adhd-zh-tw, and not for watermark or invisible-Unicode removal.
 license: "MIT AND CC-BY-SA-4.0"
 metadata:
   source: kevintsai1202/Humanizer-zh-TW (a fork of op7418/humanizer-zh, translated from blader/humanizer)
@@ -43,7 +43,7 @@ result.
    - The register still fits the context.
    - No facts, experiences, sources, figures, or citations were added.
    - Code, URLs, numbers, names, citations, and required disclosures are unchanged.
-5. Optionally run the Jev pass below on passages whose remaining issue is semantic. It is an
+5. Optionally run judgment pass below on passages whose remaining issue is semantic. It is an
 extra review aid, never a completion gate.
 6. Finish when every marked passage has an edit or a reason to retain it, and a final source comparison confirms protected spans and supported claims are intact. Deliver the humanized text in the requested format.
 
@@ -56,11 +56,11 @@ Provide:
 3. If you find that a protected span was altered, fix it before delivering. Never substitute
    "it looks more natural" for a content-fidelity check.
 
-## Jev pass on the draft (advisory)
+## Judgment pass on the draft (advisory)
 
-Read `../jev-advisory.md` first for the command, third-party data rules,
+Read `../decision-advisory.md` first for the command, third-party data rules,
 exit-3 fallback, and advisory limits. Run the `humanizer` pack live by default
-when `TYPESAFE_API_KEY` is available and the payload is safe.
+when the selected provider is configured and the payload is safe.
 
 Anything a literal search can settle, settle yourself: em dashes, curly quotes, emoji, bold
 labels, full-width versus half-width punctuation, and the watched vocabulary in the pattern
@@ -82,7 +82,7 @@ Write the remaining semantic passages into `job.json`:
 ```
 
 The pack asks up to four things about each passage: whether it states a fact, result, claim, constraint, or instruction at all (`carries_information`), whether it repeats a point another passage already makes (`restates_other_passage`, only when there are two or more passages), whether it claims more than `context` supports (`claim_exceeds_context`, only when `context` has text), and whether an editor who writes the target language would still reword it (`reads_natural_for_locale`). A question the state cannot support comes back as `not asked`, not as a pass. Treat the results as prompts to reread, nothing more.
-Jev reads Traditional Chinese with lower accuracy than English, so weigh
+Providers can vary in how they read Traditional Chinese, so weigh
 `reads_natural_for_locale` below your own reading of the zh-TW text.
 
 Protected spans, the source-based fidelity check, and the watermark/provenance exclusion above

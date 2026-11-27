@@ -18,14 +18,14 @@ export const UNKNOWN = "unknown";
 export const ADVISORY_BANDS = Object.freeze({ low: 0.35, high: 0.65 });
 
 export const ADVISORY_NOTE =
- "Jev answers are advisory signals for a human reviewer. They are not proof, " +
+ "Provider judgments are advisory signals for a human reviewer. They are not proof, " +
  "not approval, and the display bands in this report are readability buckets " +
  "rather than thresholds validated on this repository.";
 
 /** Reason text when the workflow ran without any judgments at all. */
 export function unavailableNote(reason) {
  return (
-  `Jev judgments unavailable (${reason}). Every item in this report is kept ` +
+  `Judgments unavailable (${reason}). Every item in this report is kept ` +
   "and shown without advisory signals; the deterministic part of this pack is " +
   "unaffected."
  );

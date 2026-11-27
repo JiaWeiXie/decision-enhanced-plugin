@@ -1,5 +1,5 @@
-jev-enhanced-plugin
-Copyright (c) 2026 jev-enhanced-plugin contributors
+decision-enhanced-plugin
+Copyright notice for the project is retained in LICENSE.
 
 This product includes third-party skills and agent prompts, copied and modified.
 Full license texts are in licenses/. Per-component provenance, source hashes, and
@@ -15,11 +15,11 @@ Vendored from @typesafe-ai/sdk 0.6.0
   MIT License: licenses/MIT-typesafe-ai-sdk.txt
 
 This exact ESM runtime is included so Git marketplace installations can run the
-Jev CLI without a package-manager install hook. Its source hash and package
+the decision CLI without a package-manager install hook. Its source hash and package
 provenance are recorded in audit.json.
 
 -------------------------------------------------------------------------------
-skills/s1-code-review/
+skills/decision-code-review/
 -------------------------------------------------------------------------------
 Derived from the "code-review" skill in mattpocock/skills
   https://github.com/mattpocock/skills (skills/engineering/code-review/SKILL.md)
@@ -30,11 +30,11 @@ Modifications:
   - Dropped the dependency on the setup-matt-pocock-skills companion skill and on
     docs/agents/issue-tracker.md; issue lookup now uses whatever access the repo
     already has, and reports the issue as unfetched otherwise.
-  - Added an advisory Jev judgment pass over the collected findings.
+  - Added an advisory judgment pass over the collected findings.
   - Added an instruction to read covering tests whether or not the diff changes
     them.
   - Rewrote the description to name the upstream skill it varies and to add
-    trigger phrases. The Jev pass checks each finding's basis against its own
+    trigger phrases. The judgment pass checks each finding's basis against its own
     axis only and reports findings it cannot judge as not asked.
 
 The evidence shape used by that pass (bounded candidate excerpts carrying file and
@@ -47,7 +47,7 @@ No code or prose from jev-review was copied, and its threshold filtering, list
 truncation, cross-axis severity ranking, and dashboard were deliberately not adopted.
 
 -------------------------------------------------------------------------------
-skills/s1-grilling/
+skills/decision-grilling/
 -------------------------------------------------------------------------------
 Derived from the "grilling" skill in mattpocock/skills
   https://github.com/mattpocock/skills (skills/productivity/grilling/SKILL.md)
@@ -55,7 +55,7 @@ Derived from the "grilling" skill in mattpocock/skills
   MIT License: licenses/MIT-mattpocock-skills.txt
 
 Modifications:
-  - Added an advisory Jev judgment pass over the question frontier. The frontier
+  - Added an advisory judgment pass over the question frontier. The frontier
     computation itself stays deterministic.
   - Rewrote the description to name the upstream skill it varies and to add
     trigger phrases, including Traditional Chinese ones.
@@ -64,7 +64,7 @@ The "grill-me" skill from the same repository is a one-line trampoline into
 "grilling" and was therefore not copied.
 
 -------------------------------------------------------------------------------
-skills/s1-humanizer/
+skills/decision-humanizer/
 -------------------------------------------------------------------------------
 Derived from the "humanizer" skill in blader/humanizer
   https://github.com/blader/humanizer (SKILL.md)
@@ -75,14 +75,14 @@ Modifications:
   - Split into SKILL.md (model, workflow, voice, return modes) and
     references/patterns.md (the 25-pattern catalog and "When not to act",
     copied verbatim).
-  - Added an advisory Jev judgment pass over draft passages.
+  - Added an advisory judgment pass over draft passages.
   - Rewrote the description to name the upstream skill it varies and the
     Traditional Chinese skill to use instead.
   - Did not copy the repository's README.md, AGENTS.md, .claude-plugin/, .github/,
     agents/openai.yaml, or scripts/validate-package.py.
 
 -------------------------------------------------------------------------------
-skills/s1-humanizer-zh-tw/
+skills/decision-humanizer-zh-tw/
 -------------------------------------------------------------------------------
 Derived from the "humanizer-zh-tw" skill in kevintsai1202/Humanizer-zh-TW
   https://github.com/kevintsai1202/Humanizer-zh-TW (SKILL.md)
@@ -101,13 +101,13 @@ Modifications:
   - Removed every dependency on the companion skill text-watermark-cleaner-zh-tw,
     which is not included here, while keeping the rule that a natural-sounding
     rewrite leaves any watermark in place.
-  - Added an advisory Jev judgment pass over rewritten passages.
+  - Added an advisory judgment pass over rewritten passages.
   - Rewrote the description to name the upstream skill it varies, to add
     Traditional Chinese trigger phrases, and to point replies to
-    s1-i-have-adhd-zh-tw.
+    decision-i-have-adhd-zh-tw.
 
 -------------------------------------------------------------------------------
-skills/s1-i-have-adhd-zh-tw/
+skills/decision-i-have-adhd-zh-tw/
 -------------------------------------------------------------------------------
 Derived from the "i-have-adhd-zh-tw" skill in panda850819/i-have-adhd-zh-tw
   https://github.com/panda850819/i-have-adhd-zh-tw
@@ -120,15 +120,15 @@ Derived from the "i-have-adhd-zh-tw" skill in panda850819/i-have-adhd-zh-tw
   maintainer of this repository.
 
 Modifications:
-  - Added an optional advisory Jev judgment pass over substantial drafted replies.
+  - Added an optional advisory judgment pass over substantial drafted replies.
   - Translated instructional prose into en-US, retaining the Taiwan Traditional
     Chinese output default, literal examples, safety exceptions, and checklist.
   - Rewrote the description to name the upstream skill it varies and to add
-    Traditional Chinese trigger phrases. The Jev pass accepts separate request
+    Traditional Chinese trigger phrases. The judgment pass accepts separate request
     items and judges the draft's opening paragraph on its own.
 
 -------------------------------------------------------------------------------
-skills/s1-code-simplifier/
+skills/decision-code-simplifier/
 -------------------------------------------------------------------------------
 Derived from the "code-simplifier" agent in the code-simplifier plugin 1.0.0
   Copyright Anthropic (support@anthropic.com)
@@ -139,7 +139,7 @@ Modifications (stated as required by Apache-2.0 section 4b):
   - Generalized the standards section: the repo's own documented standards take
     precedence, and the upstream project-specific rules are kept only as defaults
     for repos that document nothing.
-  - Added an advisory Jev judgment gate over the before/after pair, which never
+  - Added an advisory judgment gate over the before/after pair, which never
     certifies behavioral equivalence and never replaces the test run.
   - Rewrote the description to name the upstream agent it varies, to narrow the
     trigger to explicit cleanup requests and code written earlier in the
@@ -162,11 +162,11 @@ WikiProject AI Cleanup. Attribution and contributor history:
 Upstream did not identify an exact source revision. No endorsement is implied.
 Changes here: catalogs extracted into references; navigation and attribution added;
 Taiwan-specific instructional prose translated into en-US while preserving
-language examples. New System One instructions are separately identified in the
+language examples. New judgment instructions are separately identified in the
 skills. Keep this attribution and license when redistributing adapted catalogs.
 
 Namespace and language modifications: all packaged skill names and directories use
-the s1- prefix. Instructions use en-US; protected target-language examples and
+the decision- prefix. Instructions use en-US; protected target-language examples and
 upstream copyright names remain unchanged. Review guidance now requires grounded
 smells and checked runtime claims; grilling recommendations must identify unknown
 cost/capacity assumptions and leave them marked as unknown.
