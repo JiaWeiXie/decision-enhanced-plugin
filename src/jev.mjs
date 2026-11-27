@@ -1,4 +1,5 @@
 import { TypeSafeClient, noul as makeNoul, choice as makeChoice, score as makeScore } from './vendor/typesafe-sdk.mjs';
+import { askProvider, providerConfig, providerRequest, ProviderError, wireQuestionIds } from './providers.mjs';
 
 export const DEFAULT_MODEL = process.env.TYPESAFE_MODEL || 'jev-latest';
 export const noul = makeNoul;
@@ -6,8 +7,8 @@ export const choice = makeChoice;
 export const score = makeScore;
 
 export class MissingApiKeyError extends Error {
-  constructor() {
-    super('TYPESAFE_API_KEY is not set');
+  constructor(variable = 'TYPESAFE_API_KEY') {
+    super(`${variable} is not set`);
     this.reason = 'missing_api_key';
   }
 }
@@ -49,11 +50,63 @@ function validateAnswers(response, questions) {
   return response;
 }
 
-export function createClient({ mode = 'live', model = DEFAULT_MODEL,
-  apiKey = process.env.TYPESAFE_API_KEY, fetchImpl = globalThis.fetch,
+function selectAnswers(answers, questions) {
+  return Object.fromEntries(Object.entries(questions).map(([id, { type }]) => {
+    const answer = answers[id];
+    if (type === 'noul') return [id, { type, noul: answer.noul }];
+    const { confidence, probabilities } = answer;
+    return [id, { type, confidence, probabilities,
+      ...(type === 'choice' ? { choice: answer.choice } : { score: answer.score }) }];
+  }));
+}
+
+export function createClient({ mode = 'live', provider = 'typesafe', model, format, baseUrl,
+  accountId = process.env.CLOUDFLARE_ACCOUNT_ID, apiKey, fetchImpl = globalThis.fetch,
   mockAnswers, timeoutMs = 30_000 } = {}) {
   if (!['live', 'dry-run', 'mock'].includes(mode)) throw new TypeError('Unknown client mode');
-  if (mode === 'live' && !apiKey) throw new MissingApiKeyError();
+  if (mode === 'mock' && (provider !== 'typesafe' || format !== undefined || baseUrl !== undefined)) {
+    throw new TypeError('Provider selection is unavailable with --mock');
+  }
+  const config = providerConfig({ provider, model, format, baseUrl, accountId });
+  if (mode === 'live') apiKey = apiKey === undefined ? process.env[config.key] : apiKey;
+  if (mode === 'live' && provider !== 'self-hosted' && !apiKey) throw new MissingApiKeyError(config.key);
+
+  if (provider !== 'typesafe') {
+    const identity = { provider, format: config.format, model: config.model };
+    return {
+      async ask(state, questions) {
+        const wireIds = wireQuestionIds(config, questions);
+        const wireQuestions = wireIds
+          ? Object.fromEntries(Object.entries(wireIds).map(([id, wireId]) => [wireId, questions[id]]))
+          : questions;
+        const { body, optionIds } = providerRequest(config, state, wireQuestions);
+        if (mode === 'dry-run') {
+          return { mode, ...identity, endpoint: config.endpoint, request: body, answers: null,
+            ...(wireIds && { questionIds: wireIds }),
+            ...(optionIds && Object.keys(optionIds).length > 0 && { optionIds }) };
+        }
+        const result = await askProvider(config, body, wireQuestions, { apiKey, fetchImpl, timeoutMs, optionIds });
+        if (result.suggestions) return { mode: 'chat-advisory', ...identity, ...result };
+        try {
+          if (wireIds && result.answers && typeof result.answers === 'object' && !Array.isArray(result.answers)) {
+            result.answers = Object.fromEntries(Object.entries(wireIds)
+              .filter(([, wireId]) => Object.hasOwn(result.answers, wireId))
+              .map(([id, wireId]) => [id, result.answers[wireId]]));
+          }
+          if (!result.answers || Array.isArray(result.answers) ||
+              Object.keys(questions).some(id => !Object.hasOwn(result.answers, id))) {
+            throw new ProviderError('Missing decision answers');
+          }
+          validateAnswers(result, questions);
+        } catch {
+          throw new ProviderError('Provider returned unusable decisions');
+        }
+        return { mode, ...identity, ...result, answers: selectAnswers(result.answers, questions) };
+      },
+    };
+  }
+
+  if (model === undefined) model = DEFAULT_MODEL;
   const client = mode === 'live' ? new TypeSafeClient({
     apiKey, baseURL: 'https://api.typesafe.ai', defaultModel: model,
     fetch: fetchImpl, timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: 'off',

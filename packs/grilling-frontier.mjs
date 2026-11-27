@@ -29,7 +29,7 @@
 
 import { noul } from "../src/jev.mjs";
 import {
- ADVISORY_BANDS, ADVISORY_NOTE,
+ ADVISORY_BANDS,
  asArray,
  heading,
  isPlainObject,
@@ -38,7 +38,7 @@ import {
  readNoul,
  report,
  signalLine,
- unavailableNote,
+ judgmentNote,
 } from "./shared.mjs"
 
 export const name = "grilling-frontier";
@@ -217,7 +217,7 @@ export function decide(response, state, _args = {}) {
   autoSettled: [],
   eligibilityIsDeterministic: true,
   advisoryOnly: true,
-  note: available ? ADVISORY_NOTE : unavailableNote(reason),
+  note: judgmentNote(response, available, reason),
  };
 }
 

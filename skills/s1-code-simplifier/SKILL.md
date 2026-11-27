@@ -34,7 +34,7 @@ Use the shared command with the `simplify-gate` pack. Run live by default when
 `TYPESAFE_API_KEY` is available and the payload meets the shared data rules.
 The pack identifies places to inspect, never proves equivalence.
 
-For every live signal, reread the relevant code and test the suspected path. A missing signal is not a pass. Keep the normal source inspection and test result as the basis for accepting or reverting the rewrite; report any live value only as `Jev (advisory, p=…)`.
+For every live signal, reread the relevant code and test the suspected path. A missing signal is not a pass. Keep the normal source inspection and test result as the basis for accepting or reverting the rewrite; label any live probability with the model name and mark it advisory.
 
 ---
 

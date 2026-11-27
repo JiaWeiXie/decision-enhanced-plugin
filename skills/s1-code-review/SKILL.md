@@ -148,7 +148,7 @@ the finding is right.
 
 Use the result only to:
 
-- label a finding inside its own axis (`Jev (advisory, p=0.34): evidence may not support this claim`);
+- label a finding within its own axis with the model name, advisory probability, and what to recheck;
 - when `evidenceRelation` is `contradicts`, reread the quoted code against the claim before
   reporting; the finding stays in its axis whatever you conclude, and a rewrite is yours to make;
 - attach the chosen excerpt to the finding so the reader can check it;
@@ -168,7 +168,7 @@ Present the two reports under `## Standards` and `## Spec` headings, verbatim or
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
-Account for every grounded finding in its original axis, report review coverage limits, and distinguish unavailable spec coverage from a clean Spec result. Follow the shared rules for reporting the actual Jev mode; dry-run and mock are not live judgments.
+Account for every grounded finding in its original axis, report review coverage limits, and distinguish unavailable spec coverage from a clean Spec result. Follow the shared rules for reporting the reported inference mode; dry-run and mock are not live judgments.
 
 ## Why two axes
 

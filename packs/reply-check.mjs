@@ -33,7 +33,7 @@
 
 import { noul } from "../src/jev.mjs";
 import {
- ADVISORY_BANDS, ADVISORY_NOTE,
+ ADVISORY_BANDS,
  asArray,
  asText,
  heading,
@@ -42,7 +42,7 @@ import {
  readNoul,
  report,
  signalLine,
- unavailableNote,
+ judgmentNote,
 } from "./shared.mjs"
 
 export const name = "reply-check";
@@ -260,7 +260,7 @@ export function decide(response, state, _args = {}) {
   requestItems: coverage.items,
   attention: attentionOf(signals),
   advisoryOnly: true,
-  note: available ? ADVISORY_NOTE : unavailableNote(reason),
+  note: judgmentNote(response, available, reason),
  };
 }
 
