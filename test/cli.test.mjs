@@ -98,6 +98,34 @@ test('explicit provider overrides an invalid environment in offline preview', ()
   assert.equal(JSON.parse(result.stdout).provider, 'gemini');
 });
 
+test('offline OpenAI preview omits the wire destination and credentials', () => {
+  const secret = 'SYNTHETIC-OPENAI-PREVIEW-KEY';
+  const state = { draft: 'Projected draft.', request: 'Review it.', banned: ['LOCAL-ONLY-PREVIEW'] };
+  const env = { OPENAI_API_KEY: secret };
+  const preview = input => run('reply-check', JSON.stringify(input), ['--provider', 'openai', '--dry-run'], env);
+  const result = preview(state);
+  assert.equal(result.status, 0);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.provider, 'openai');
+  assert.deepEqual(output.request.state, { request: 'Review it.', draftOpening: 'Projected draft.', draft: 'Projected draft.' });
+  assert.doesNotMatch(result.stdout + result.stderr, /api\.openai\.com|decision_attempt|Authorization|SYNTHETIC-OPENAI-PREVIEW-KEY|LOCAL-ONLY-PREVIEW/);
+
+  const blocked = preview({ ...state, draft: secret });
+  assert.equal(blocked.status, 3);
+  assert.equal(JSON.parse(blocked.stdout).reason, 'unsafe_payload');
+  assert.doesNotMatch(blocked.stdout + blocked.stderr, /decision_attempt|SYNTHETIC-OPENAI-PREVIEW-KEY/);
+});
+
+test('a lone Google key cannot dispatch even with explicit Gemini or auto', () => {
+  for (const provider of ['gemini', 'auto']) {
+    const result = run('humanizer', '{"passages":["Sample"],"locale":"en"}', ['--provider', provider],
+      { GOOGLE_API_KEY: 'SYNTHETIC-GOOGLE-ONLY' });
+    assert.equal(result.status, 3);
+    assert.equal(JSON.parse(result.stdout).reason, 'missing_api_key');
+    assert.doesNotMatch(result.stdout + result.stderr, /decision_attempt|SYNTHETIC-GOOGLE-ONLY/);
+  }
+});
+
 test('secret-bearing payload never appears in stdout or stderr even with preview requested', () => {
   const secret = 'SYNTHETICBLOCKEDTOKEN12345';
   for (const args of [['--dry-run'], []]) {

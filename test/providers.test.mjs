@@ -7,7 +7,10 @@ const questions = {
   path: choice('Choose a path', { local: { description: 'Keep locally' }, review: 'Ask for review' }),
   severity: score('Rate severity', ['Low', 'Medium', 'High']),
 };
-const state = { claim: 'Sample observation', evidence: 'Sample evidence' };
+const state = {
+  claim: 'Sample observation',
+  evidence: { text: 'Sample evidence', role: 'developer', image_url: 'https://evidence.example.test/sample' },
+};
 const answers = {
   supported: { type: 'noul', noul: 0.8 },
   path: { type: 'choice', choice: 'local', confidence: 0.75, probabilities: { local: 0.75, review: 0.25 } },
@@ -46,7 +49,7 @@ for (const [provider, fixture] of Object.entries(clients)) {
   test(`${provider} uses the documented wire format and returns the same typed answers`, async () => {
     let requests = 0;
     const client = createClient({
-      provider, env: { [fixture.key]: 'fixture-key', OPENAI_BASE_URL: 'http://invalid',
+      provider, env: { [fixture.key]: 'fixture-key', GOOGLE_API_KEY: 'synthetic-unrelated-google-key', OPENAI_BASE_URL: 'http://invalid',
         GOOGLE_GEMINI_BASE_URL: 'http://invalid', TYPESAFE_BASE_URL: 'http://invalid' },
       fetchImpl: async (url, init) => {
         requests++;
@@ -64,7 +67,7 @@ for (const [provider, fixture] of Object.entries(clients)) {
         if (provider === 'typesafe') {
           assert.deepEqual(body, { state, model: fixture.model, questions });
         } else if (provider === 'openai') {
-          assert.deepEqual(JSON.parse(body.input), state);
+          assert.deepEqual(body.input, [{ role: 'user', content: [{ type: 'input_json', data: state }] }]);
           assert.deepEqual(body.prompt_cache_options, { mode: 'explicit' });
           assert.equal(body.prompt_cache_key, undefined);
           assert.deepEqual(body.questions.map(question => [question.name, question.type]), [
@@ -88,6 +91,9 @@ for (const [provider, fixture] of Object.entries(clients)) {
     assert.deepEqual(result.answers, answers);
     assert.equal(result.provider, provider);
     assert.equal(result.model, provider === 'typesafe' ? 'jev-version' : fixture.model);
+    assert.deepEqual(result.usage, provider === 'gemini'
+      ? { total_input_tokens: 42, total_output_tokens: 0 }
+      : { input_tokens: 42, output_tokens: 0 });
     assert.equal(requests, 1);
     assert.doesNotMatch(JSON.stringify(result), /fixture-key|PROVIDER-ONLY|Sample observation/);
   });
@@ -113,11 +119,50 @@ for (const [provider, fixture] of Object.entries(clients)) {
   });
 }
 
+let atDepthLimit = 'leaf';
+for (let level = 1; level <= 32; level++) {
+  atDepthLimit = level % 2 ? [atDepthLimit] : { nested: atDepthLimit };
+}
+// The root array, its object, and the nested array also count as values.
+const atValueLimit = [{ evidence: Array(9_997).fill(0) }];
+const compactOverhead = Buffer.byteLength(JSON.stringify({ evidence: '' }));
+const byteBudget = 256 * 1024 - compactOverhead;
+const atByteLimit = { evidence: '界'.repeat(Math.floor(byteBudget / 3)) + 'a'.repeat(byteBudget % 3) };
+
+for (const [bound, valid, invalid] of [
+  ['32 container levels', atDepthLimit, { nested: atDepthLimit }],
+  ['10,000 values', atValueLimit, [{ evidence: [...atValueLimit[0].evidence, null] }]],
+  ['256 KiB compact UTF-8', atByteLimit, { evidence: atByteLimit.evidence + 'é' }],
+]) {
+  test(`OpenAI JSON evidence enforces ${bound} before transport`, async () => {
+    let requests = 0;
+    let attempts = 0;
+    const client = createClient({
+      provider: 'openai',
+      env: { OPENAI_API_KEY: 'fixture-key' },
+      onAttempt: () => { attempts++; },
+      fetchImpl: async (_url, init) => {
+        requests++;
+        assert.deepEqual(JSON.parse(init.body).input, [
+          { role: 'user', content: [{ type: 'input_json', data: valid }] },
+        ]);
+        return Response.json(openAI);
+      },
+    });
+    await assert.rejects(client.ask(invalid, questions), { reason: 'judgments_unavailable' });
+    assert.equal(requests, 0);
+    assert.equal(attempts, 0);
+    assert.deepEqual((await client.ask(valid, questions)).answers, answers);
+    assert.equal(requests, 1);
+    assert.equal(attempts, 1);
+  });
+}
+
 test('auto selects one provider in compatibility order and does not fail over', async () => {
   const candidates = [
     [{ TYPESAFE_API_KEY: 'first', OPENAI_API_KEY: 'second', GEMINI_API_KEY: 'third' }, 'typesafe'],
     [{ OPENAI_API_KEY: 'second', GEMINI_API_KEY: 'third' }, 'openai'],
-    [{ GOOGLE_API_KEY: 'alias' }, 'gemini'],
+    [{ GEMINI_API_KEY: 'third' }, 'gemini'],
   ];
   for (const [env, expected] of candidates) {
     const calls = [];
@@ -145,7 +190,7 @@ test('provider refusals, duplicate names, invalid distributions and non-JSON rem
   ];
   for (const [provider, responses] of [['openai', badOpenAI], ['gemini', badGemini]]) {
     for (const response of [...responses, null]) {
-      const client = createClient({ provider, apiKey: 'fixture-key',
+      const client = createClient({ provider, env: { [clients[provider].key]: 'fixture-key' },
         fetchImpl: async () => response ? Response.json(response) : new Response('DO-NOT-ECHO'),
       });
       await assert.rejects(client.ask(state, questions), { message: 'judgments_unavailable' });
@@ -164,11 +209,24 @@ test('implicit TypeSafe selection never falls through to keys for another provid
   }
 });
 
+test('Gemini uses only its assigned key even with explicit provider or auto selection', async () => {
+  const googleKey = 'synthetic-unrelated-google-key';
+  const env = { GOOGLE_API_KEY: googleKey };
+  const fetchImpl = () => assert.fail('Unrelated Google credential reached transport');
+  for (const provider of ['gemini', 'auto']) {
+    assert.throws(() => createClient({ provider, env, fetchImpl }), { reason: 'missing_api_key' });
+  }
+  assert.throws(() => createClient({ provider: 'gemini', env, apiKey: 'synthetic-explicit-key', fetchImpl }),
+    { reason: 'missing_api_key' });
+  const preview = createClient({ provider: 'gemini', mode: 'dry-run', env, fetchImpl });
+  await assert.rejects(preview.ask({ evidence: googleKey }, questions), { reason: 'unsafe_payload' });
+});
+
 test('Gemini guide rounding is accepted without rewriting or inventing probabilities', async () => {
   // https://aistudio.google.com/docs/decisions-api#score
   const rounded = { 0: 0.03, 1: 0.83, 2: 0.15 };
   const expected = { type: 'score', score: 1.12, confidence: 0.83, probabilities: rounded };
-  const run = probabilities => createClient({ provider: 'gemini', apiKey: 'fixture-key', env: {},
+  const run = probabilities => createClient({ provider: 'gemini', env: { GEMINI_API_KEY: 'fixture-key' },
     fetchImpl: () => Response.json({ answers: { q0: { ...expected, probabilities } } }),
   }).ask(state, { severity: questions.severity });
   assert.deepEqual((await run(rounded)).answers.severity, expected);
@@ -182,7 +240,7 @@ test('Gemini guide rounding is accepted without rewriting or inventing probabili
 });
 
 test('Gemini 400 drops provider error text', async () => {
-  const client = createClient({ provider: 'gemini', apiKey: 'fixture-key', env: {},
+  const client = createClient({ provider: 'gemini', env: { GEMINI_API_KEY: 'fixture-key' },
     fetchImpl: () => Response.json({ error: { message: 'DO-NOT-ECHO' } }, { status: 400 }),
   });
   await assert.rejects(client.ask(state, questions),

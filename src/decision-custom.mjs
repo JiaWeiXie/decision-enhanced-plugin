@@ -44,9 +44,13 @@ function invalidConfig() {
 
 function checkPath(path) {
   const unsafeEscape = /%(?:[01][0-9a-f]|20|23|25|2f|3f|5c|7f)|%(?![0-9a-f]{2})/i;
+  // Some servers strip semicolon parameters before interpreting dot segments.
+  const isDotSegment = segment => {
+    const name = segment.split(/;|%3b/i, 1)[0];
+    return /^\.{1,2}$/.test(name.replace(/%2e/gi, '.'));
+  };
   if (!path.startsWith('/') || path.includes('//') || /[?#\\]|[^\x21-\x7e]/.test(path) ||
-    unsafeEscape.test(path) ||
-    path.split('/').some(segment => /^\.{1,2}$/.test(segment.replace(/%2e/gi, '.')))) throw invalidConfig();
+    unsafeEscape.test(path) || path.split('/').some(isDotSegment)) throw invalidConfig();
 }
 
 export function customEndpoint(value, path = '') {

@@ -163,7 +163,12 @@ test('custom base points to the configured protocol and never inherits provider 
     const client = createClient({ provider: 'custom', env, fetchImpl: async (url, init) => {
       assert.equal(url, 'https://192.168.10.11/service' + suffix);
       assert.deepEqual(init.headers, { 'Content-Type': 'application/json' });
-      assert.equal(JSON.parse(init.body).model, model);
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, model);
+      if (protocol === 'openai') {
+        assert.deepEqual(body.input, [{ role: 'user', content: [{ type: 'input_json', data: state }] }]);
+        assert.deepEqual(body.prompt_cache_options, { mode: 'explicit' });
+      }
       return Response.json(fixture);
     } });
     assert.deepEqual((await client.ask(state, questions)).answers, result.answers);
@@ -329,6 +334,47 @@ test('custom refuses ambiguous path syntax before composing or binding credentia
     DECISION_CUSTOM_CREDENTIAL_FIXTURE: 'synthetic-auth-binding',
   };
   assert.throws(() => createClient({ provider: 'custom', env }), { reason: 'invalid_provider_config' });
+});
+
+test('custom rejects dot segments with raw or encoded path parameters before auth or transport', () => {
+  const origin = 'https://decision.example.test';
+  const auth = {
+    DECISION_CUSTOM_BEARER_REF: 'DECISION_CUSTOM_CREDENTIAL_FIXTURE',
+    DECISION_CUSTOM_CREDENTIAL_FIXTURE: 'synthetic-auth-binding',
+  };
+  const fetchImpl = () => assert.fail('Custom path parameter reached transport');
+  for (const segment of ['.;v=1', '..;', '.%3b', '..%3Bv=1', '%2e;v=1', '.%2E%3b', '%2e%2e%3b']) {
+    const path = '/a/' + segment + '/evaluate';
+    for (const field of ['DECISION_CUSTOM_ENDPOINT', 'DECISION_CUSTOM_BASE_URL']) {
+      const env = { ...customEnv, DECISION_CUSTOM_ENDPOINT: undefined, [field]: origin + path };
+      const authEndpoint = origin + path + (field.endsWith('BASE_URL') ? '/v1/systemone' : '');
+      for (const options of [env, { ...env, ...auth, DECISION_CUSTOM_AUTH_ENDPOINT: authEndpoint }]) {
+        assert.throws(() => createClient({ provider: 'custom', env: options, fetchImpl }),
+          { reason: 'invalid_provider_config' }, `${field}: ${segment}`);
+      }
+    }
+    assert.throws(() => customEndpoint(origin + '/base', path), /Invalid custom provider configuration/);
+    const env = { ...customEnv, ...auth, DECISION_CUSTOM_AUTH_ENDPOINT: origin + path };
+    assert.throws(() => createClient({ provider: 'custom', env, fetchImpl }), { reason: 'invalid_provider_config' });
+  }
+});
+
+test('custom preserves ordinary parameterized paths and their auth binding over loopback HTTPS', async () => {
+  const endpoint = 'https://localhost:8443/.well-known/release;v=1/evaluate%3Bstable';
+  const env = {
+    ...customEnv, DECISION_CUSTOM_ENDPOINT: endpoint, DECISION_CUSTOM_AUTH_ENDPOINT: endpoint,
+    DECISION_CUSTOM_BEARER_REF: 'DECISION_CUSTOM_CREDENTIAL_FIXTURE',
+    DECISION_CUSTOM_CREDENTIAL_FIXTURE: 'synthetic-auth-binding',
+  };
+  const client = createClient({
+    provider: 'custom', env,
+    fetchImpl: (url, init) => {
+      assert.equal(url, endpoint);
+      assert.equal(init.headers.authorization, 'Bearer synthetic-auth-binding');
+      return Response.json(result);
+    },
+  });
+  assert.deepEqual((await client.ask(state, questions)).answers, result.answers);
 });
 
 test('generic auth and non-dedicated credential references are refused even with populated env values', () => {

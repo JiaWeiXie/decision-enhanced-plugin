@@ -103,11 +103,12 @@ Choose an approved destination before sending evidence.
 | --- | --- | --- |
 | `typesafe` | `TYPESAFE_API_KEY`, optional `TYPESAFE_MODEL` | Defaults to `jev-latest` |
 | `openai` | `OPENAI_API_KEY` | `gpt-6-luna` |
-| `gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-decision-1` |
+| `gemini` | `GEMINI_API_KEY` | `gemini-decision-1` |
 | `cloudflare` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN`, optional `DECISION_CLOUDFLARE_MODEL` | `clef`, `clef-flash`, `clef-omni` |
 | `ollama` | Optional `DECISION_OLLAMA_MODEL` | `clef` or explicit `clef:cloud` |
 | `custom` | Explicit endpoint, protocol and model below | Set by the operator |
 
+`GOOGLE_API_KEY` does not enable Gemini or participate in automatic selection.
 Gemini choice and score responses may have rounding drift. The adapter accepts
 a total within 0.01 of 1 when every option or level is present and in range.
 It preserves the probabilities returned by Gemini. Use `--provider gemini` when
@@ -146,9 +147,11 @@ Use a trusted HTTPS endpoint with valid TLS. The operator of a private server
 or tunnel can read the pack. Only the named Ollama provider uses HTTP, on its
 fixed loopback URL. Custom rejects userinfo, query strings, fragments, metadata
 and link-local destinations. It also rejects raw or encoded dot segments,
-duplicate slashes and encoded slash or backslash separators before path
-normalization. Keep endpoint and header configuration in a trusted process
-environment. Job files and repository configuration cannot provide them.
+including segments that become `.` or `..` after stripping a semicolon
+parameter, as well as duplicate slashes and encoded slash or backslash
+separators before path normalization. Keep endpoint and header configuration
+in a trusted process environment. Job files and repository configuration
+cannot provide them.
 
 Set `DECISION_CUSTOM_AUTH_ENDPOINT` to the exact HTTPS URL to bind auth,
 including its path. If omitted, the binding comes from the process-configured
@@ -181,10 +184,13 @@ local attempt record with the provider, model, origin, credential name and a
 locally generated decision ID. It discards provider error bodies and free-text
 feedback.
 
-OpenAI requests disable prompt caching by selecting explicit mode and sending
-no cache breakpoints. This controls prompt caching only. The service and
-account determine other retention. Local Ollama keeps the pack on the machine
-when local `clef` is selected. [OpenAI Decisions prompt caching](https://developers.openai.com/api/docs/guides/decisions#reuse-shared-input-with-prompt-caching)
+OpenAI receives the projected evidence as an `input_json` part in a user message.
+It accepts up to 32 container levels, 10,000 JSON values and 256 KiB of compact
+UTF-8 JSON in that part.
+The requests disable prompt caching by selecting explicit mode and sending no
+cache breakpoints. The service and account determine other retention. Local
+Ollama keeps the pack on the machine when local `clef` is selected.
+[OpenAI Decisions JSON input](https://developers.openai.com/api/docs/guides/decisions#evaluate-json-data) · [Prompt caching](https://developers.openai.com/api/docs/guides/decisions#reuse-shared-input-with-prompt-caching)
 
 ## Run a pack
 
@@ -195,8 +201,10 @@ decision-pack humanizer --state /absolute/path/to/job.json --provider gemini --d
 
 Use `node src/cli.mjs` from a checkout, or `npm install -g .` for the
 `decision-pack` binary. `--state -` reads stdin. `--dry-run` previews the
-projected state and questions locally. `--mock <file>` replays typed answers
-locally. `--list` prints available packs.
+projected state and questions locally, after checking for protected literals.
+The preview omits the destination and credentials and uses TypeSafe as the
+preview provider for `auto`. `--mock <file>` replays typed answers locally.
+`--list` prints available packs.
 
 Live output identifies the provider and model. Invalid input exits 2. Missing
 credentials, invalid provider configuration, unsafe evidence and unusable

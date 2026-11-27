@@ -9,6 +9,8 @@ export { noul, choice, score };
 
 const autoOrder = ['typesafe', 'openai', 'gemini'];
 const providerKeyNames = Object.values(keyNames).flat();
+// Protect unrelated Google credentials if pasted into a pack. Never use them for inference.
+const protectedKeyNames = [...providerKeyNames, 'GOOGLE_API_KEY'];
 const secretProperty = /^(?:api[-_ ]?key|access[-_ ]?token|auth[-_ ]?token|client[-_ ]?secret|private[-_ ]?key|password|passwd|authorization)$/i;
 const secretPatterns = [
   /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/,
@@ -84,7 +86,7 @@ function hasSecret(text, keys) {
 }
 
 export function rejectSecrets(value, env = process.env, explicitKeys = []) {
-  const keys = [...explicitKeys, ...providerKeyNames.map(variable => env[variable]?.trim())].filter(Boolean);
+  const keys = [...explicitKeys, ...protectedKeyNames.map(variable => env[variable]?.trim())].filter(Boolean);
   scanSecrets(value, keys);
 }
 
@@ -126,7 +128,7 @@ export function createClient({ mode = 'live', provider: requested, env = process
   const selection = validateProvider(requested ?? env.DECISION_PROVIDER);
   const live = mode === 'live';
   const configuredKey = name => {
-    if (name !== 'cloudflare' && (selection !== 'auto' || name === 'typesafe') && apiKey != null) {
+    if ((name === 'typesafe' || (name === 'openai' && selection === 'openai')) && apiKey != null) {
       return apiKey.trim();
     }
     return keyFor(name, env);
@@ -159,7 +161,7 @@ export function createClient({ mode = 'live', provider: requested, env = process
         }
       }
       const customKeys = customAuth?.values ?? [];
-      if (customKeys.some(value => providerKeyNames.some(name => env[name]?.trim() === value))) {
+      if (customKeys.some(value => protectedKeyNames.some(name => env[name]?.trim() === value))) {
         throw new DecisionError('invalid_provider_config');
       }
       rejectSecrets(request, env, [key, ...customKeys]);

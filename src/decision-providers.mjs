@@ -1,5 +1,5 @@
 import { customEndpoint, customHeaderBindings } from './decision-custom.mjs';
-import { checkGeminiResponse, checkSystemOneResponse, hasOnly, unwrapCloudflare } from './decision-response.mjs';
+import { checkGeminiResponse, checkSystemOneResponse, hasOnly, isRecord, unwrapCloudflare } from './decision-response.mjs';
 
 export const endpoints = Object.freeze({
   typesafe: 'https://api.typesafe.ai/v1/systemone',
@@ -16,7 +16,7 @@ export const models = Object.freeze({
 export const keyNames = Object.freeze({
   typesafe: ['TYPESAFE_API_KEY'],
   openai: ['OPENAI_API_KEY'],
-  gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  gemini: ['GEMINI_API_KEY'],
   cloudflare: ['CLOUDFLARE_AUTH_TOKEN'],
 });
 
@@ -77,6 +77,22 @@ export function providerConfig(provider, { env, model, apiKey, custom = {}, live
 }
 
 const asText = value => typeof value === 'string' ? value : JSON.stringify(value ?? '');
+
+function checkOpenAIInput(state) {
+  const invalidInput = () => new Error('Invalid OpenAI JSON evidence');
+  if (!isRecord(state) && !(Array.isArray(state) && state.every(isRecord))) throw invalidInput();
+
+  // Count the root and each nested value, including arrays and objects, but not property names.
+  let values = 0;
+  function visit(value, level) {
+    if (++values > 10_000) throw invalidInput();
+    if (value === null || typeof value !== 'object') return;
+    if (level > 32) throw invalidInput();
+    for (const child of Object.values(value)) visit(child, level + 1);
+  }
+  visit(state, 1);
+  if (Buffer.byteLength(JSON.stringify(state), 'utf8') > 256 * 1024) throw invalidInput();
+}
 
 function openAIQuestion(name, { type, instructions, criteria }) {
   const text = asText(instructions);
@@ -154,17 +170,19 @@ export function decisionRequest(protocol, { state, model, questions }, limits) {
     // Cloudflare restricts IDs to a short ASCII alphabet. Resolve generated IDs locally.
     return { state, model, questions: Object.fromEntries(entries.map(([, question], index) => ['q' + index, question])) };
   }
-  const input = JSON.stringify(state);
   if (protocol === 'openai') {
     if (entries.length > 400) throw new Error('Too many questions');
+    checkOpenAIInput(state);
     return {
-      model, input, prompt_cache_options: { mode: 'explicit' },
+      model,
+      input: [{ role: 'user', content: [{ type: 'input_json', data: state }] }],
+      prompt_cache_options: { mode: 'explicit' },
       questions: entries.map(([, question], index) => openAIQuestion('q' + index, question)),
     };
   }
   if (entries.length > 1000) throw new Error('Too many questions');
   return {
-    model, input, questions: Object.fromEntries(entries.map(([, question], index) => [
+    model, input: JSON.stringify(state), questions: Object.fromEntries(entries.map(([, question], index) => [
       'q' + index, geminiQuestion(question),
     ])),
   };
