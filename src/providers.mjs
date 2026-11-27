@@ -24,6 +24,13 @@ const SELF_HOST_PATHS = {
   'ollama-chat': '/api/chat',
 };
 
+const DECISION_LIMITS = {
+  openai: { questions: 400, choices: 255, levels: 10 },
+  gemini: { questions: 1000, choices: 255, levels: 255 },
+  cloudflare: { questions: 64 },
+  'ollama-cloud': { questions: 64, choices: 26, levels: 10 },
+};
+
 export const PROVIDER_NAMES = ['typesafe', ...Object.keys(HOSTED), 'self-hosted'];
 
 export class ProviderError extends Error {
@@ -72,6 +79,9 @@ export function providerConfig({ provider, model, format, baseUrl, accountId }) 
   if (provider === 'typesafe') return { provider, model, key: 'TYPESAFE_API_KEY' };
 
   const config = { ...HOSTED[provider], provider, model: model ?? HOSTED[provider].model };
+  if ((provider === 'openai' || provider === 'gemini') && config.model !== HOSTED[provider].model) {
+    throw new TypeError(`The ${provider} Decisions API supports only ${HOSTED[provider].model}`);
+  }
   if (provider === 'cloudflare') {
     if (typeof accountId !== 'string' || !/^[a-f\d]{32}$/i.test(accountId)) {
       throw new TypeError('Set CLOUDFLARE_ACCOUNT_ID to the 32-character Workers AI account ID');
@@ -175,8 +185,44 @@ function geminiRequest(model, state, questions) {
   };
 }
 
+function assertDecisionLimits(provider, questions) {
+  const limits = DECISION_LIMITS[provider];
+  if (!limits) return;
+
+  const entries = Object.values(questions);
+  if (entries.length > limits.questions) {
+    throw new RangeError(`${provider} accepts at most ${limits.questions} questions per request`);
+  }
+  for (const { type, criteria } of entries) {
+    if (type === 'choice' && limits.choices) {
+      const count = Object.keys(criteria).length;
+      if (count < 2 || count > limits.choices) {
+        throw new RangeError(`${provider} accepts 2 to ${limits.choices} options per choice`);
+      }
+    }
+    if (type === 'score' && limits.levels) {
+      if (criteria.length < 2 || criteria.length > limits.levels) {
+        throw new RangeError(`${provider} accepts 2 to ${limits.levels} levels per score`);
+      }
+      if (provider === 'gemini' && criteria.some(level => !asText(level).trim())) {
+        throw new RangeError('gemini requires nonempty score levels');
+      }
+    }
+  }
+}
+
+function suggestionSchema(questions) {
+  const properties = mapRecord(questions, ({ type, criteria }) => {
+    if (type === 'noul') return { type: ['boolean', 'null'] };
+    if (type === 'choice') return { type: ['string', 'null'], enum: [...Object.keys(criteria), null] };
+    return { type: ['integer', 'null'], enum: [...criteria.map((_, index) => index), null] };
+  });
+  return { type: 'object', properties, required: Object.keys(questions), additionalProperties: false };
+}
+
 export function providerRequest(config, state, questions) {
-  const { model, format } = config;
+  const { model, format, provider } = config;
+  assertDecisionLimits(provider, questions);
   if (format === 'openai-decisions') {
     return { body: { model, input: asText(state), questions: Object.entries(questions)
       .map(([name, question]) => openAIQuestion(name, question)) } };
@@ -185,10 +231,14 @@ export function providerRequest(config, state, questions) {
   if (format === 'system-one') {
     return { body: { model, state, questions: mapRecord(questions, question => decisionQuestion(question, false)) } };
   }
-  return { body: { model, stream: false, messages: [
+  const messages = [
     { role: 'system', content: CHAT_INSTRUCTIONS },
     { role: 'user', content: JSON.stringify({ state, questions }) },
-  ] } };
+  ];
+  const schema = suggestionSchema(questions);
+  const outputFormat = format === 'ollama-chat' ? { format: schema, options: { temperature: 0 } }
+    : { response_format: { type: 'json_schema', json_schema: { name: 'decision_suggestions', strict: true, schema } } };
+  return { body: { model, stream: false, messages, ...outputFormat } };
 }
 
 function restoreGeminiChoice(answer, criteria, aliases) {

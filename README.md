@@ -115,7 +115,7 @@ Each pack's `--state` shape is documented at the top of its file in `packs/`. Th
 
 ## Choosing a provider
 
-Set the key for the selected provider in the CLI process environment through your secret manager. Keep keys out of state files, shell history, provider URLs, and source control. Choose a provider explicitly with `--provider`. Other providers’ keys do not affect the choice, and a failed request does not fall back to another service. Use `--model <id>` to override the provider’s default.
+Set the key for the selected provider in the CLI process environment through your secret manager. Keep keys out of state files, shell history, provider URLs, and source control. Choose a provider explicitly with `--provider`. Other providers’ keys do not affect the choice. Use `--model <id>` to select a supported model. The direct OpenAI and Gemini Decisions APIs each support only the model listed below.
 
 | `--provider` | Default model | Where to get the credential |
 | --- | --- | --- |
@@ -132,9 +132,16 @@ For example, preview a Gemini request locally and inspect its `endpoint` and `re
 node src/cli.mjs humanizer --state state.json --provider gemini --dry-run
 ```
 
-OpenCode uses the hosted Console inference gateway, documented separately from the OpenCode client and SDK. Cloudflare’s Clef models use the Workers AI REST run endpoint. Cloudflare and Ollama Cloud accept up to 64 questions per decision request. Gemini, Cloudflare, and Ollama Cloud restrict question ID formats. The CLI assigns new IDs when needed and restores the original IDs in its output. Choose smaller inputs if a batch exceeds a provider limit. [OpenCode client SDK](https://opencode.ai/docs/build/sdk/) · [Cloudflare Clef parameters](https://developers.cloudflare.com/workers-ai/models/clef/#parameters) · [Ollama System One limits](https://docs.ollama.com/api/systemone)
+OpenCode uses the hosted Console inference gateway, documented separately from the OpenCode client and SDK. Cloudflare’s Clef models use the Workers AI REST run endpoint. The CLI checks the following provider limits before sending a request. Providers also enforce their own context limits. Gemini, Cloudflare, and Ollama Cloud restrict question ID formats. The CLI assigns new IDs when needed and restores the original IDs in its output. [OpenCode client SDK](https://opencode.ai/docs/build/sdk/) · [Cloudflare Clef parameters](https://developers.cloudflare.com/workers-ai/models/clef/#parameters)
 
-For Gemini, the CLI also maps option IDs that violate its format rules and restores them in both the selected option and probability distribution. A dry run shows any aliases in `optionIds`, keyed by the request’s question ID. Gemini sorts the IDs it receives, so aliasing can change which option wins an exact tie. Gemini accepts up to 1,000 questions per request and 255 options per choice, including the review pack’s `noMatch` option. Use smaller inputs to stay within those limits. [Gemini key and batch limits](https://aistudio.google.com/docs/decisions-api#limits) · [Option ordering](https://aistudio.google.com/docs/decisions-api#choice)
+| Provider | Questions per request | Options per choice | Levels per score |
+| --- | --- | --- | --- |
+| [OpenAI](https://developers.openai.com/api/reference/resources/decisions/methods/create) | Up to 400 | 2–255 | 2–10 |
+| [Gemini](https://aistudio.google.com/docs/decisions-api#limits) | Up to 1,000 | 2–255 | 2–255 nonempty levels |
+| [Cloudflare](https://developers.cloudflare.com/workers-ai/models/clef/#parameters) | Up to 64 | Per model | Per model |
+| [Ollama Cloud](https://docs.ollama.com/capabilities/decision#question-types) | Up to 64 | 2–26 | 2–10 |
+
+For Gemini, the CLI also maps option IDs that violate its format rules and restores them in both the selected option and probability distribution. A dry run shows any aliases in `optionIds`, keyed by the request’s question ID. Gemini sorts the IDs it receives, so aliasing can change which option wins an exact tie. The review pack’s `noMatch` option counts toward the choice limit. Use smaller inputs when a batch exceeds a limit. [Gemini key and batch limits](https://aistudio.google.com/docs/decisions-api#limits) · [Option ordering](https://aistudio.google.com/docs/decisions-api#choice)
 
 ### Self-hosted servers
 
@@ -153,11 +160,13 @@ node src/cli.mjs humanizer --state state.json --provider self-hosted \
 
 Install or pull the chosen model on your server first. Check the server’s routing: a local Ollama server can forward requests to cloud models. For local inference, select a local model. [Ollama decision and model setup](https://docs.ollama.com/capabilities/decision) · [Chat protocol](https://docs.ollama.com/api/chat) · [OpenAI-compatible protocol](https://docs.ollama.com/api/openai-compatibility)
 
-Native decisions use `mode: "live"`. For explicit alternate providers, `provider`, `format`, and the selected `model` identify the route. The pack uses native answers as advisory model output. Chat formats use `mode: "chat-advisory"` and return `suggestions` keyed by question ID, with `answers: null`. Suggestions are generated yes/no values, option labels, integer rubric levels, or `null` for uncertainty. They have no probabilities and leave the pack’s result on its deterministic path. Use `--mock` by itself to replay an existing fixture.
+Native decisions use `mode: "live"`. For explicit alternate providers, `provider`, `format`, and the selected `model` identify the route. The pack uses native answers as advisory model output. Chat formats use `mode: "chat-advisory"` and return `suggestions` keyed by question ID, with `answers: null`. Suggestions are generated yes/no values, option labels, integer rubric levels, or `null` for uncertainty. They have no probabilities and leave the pack’s result on its deterministic path. Both chat formats require a server and model that support JSON Schema structured outputs. The CLI checks every suggested value again before showing it. Use `--mock` by itself to replay an existing fixture. [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs) · [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 
 ## Failure behavior
 
 A missing key, a network failure, an HTTP error, or a malformed answer all resolve to the same thing: `unknown`, reported as `unknown`. `unknown` means the absence of a signal. The packs never invent a probability, and service failures do not leak response contents into the report.
+
+The CLI makes one attempt and rejects redirects. A failed request never falls back to another service. Check credentials and model access after an authorization error. For a rate limit, check the provider’s retry guidance before explicitly rerunning the command. Automatic retries could duplicate paid inference. The CLI returns an input error for an unsupported model or a request above a locally checked limit.
 
 ## Evaluation
 

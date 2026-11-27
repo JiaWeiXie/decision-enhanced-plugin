@@ -109,7 +109,8 @@ export function createClient({ mode = 'live', provider = 'typesafe', model, form
   if (model === undefined) model = DEFAULT_MODEL;
   const client = mode === 'live' ? new TypeSafeClient({
     apiKey, baseURL: 'https://api.typesafe.ai', defaultModel: model,
-    fetch: fetchImpl, timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: 'off',
+    fetch: (url, options) => fetchImpl(url, { ...options, redirect: 'error' }),
+    timeout: timeoutMs, retry: { maxRetries: 0 }, logLevel: 'off',
   }) : null;
   return {
     async ask(state, questions) {

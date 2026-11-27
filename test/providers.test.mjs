@@ -117,6 +117,44 @@ test('TypeSafe retains its original wire payload and no provider option is infer
   assert.deepEqual(await client.ask(state, questions), { answers, model: 'legacy-test', usage, mode: 'live' });
 });
 
+test('TypeSafe refuses redirects without retrying or emitting response details', async () => {
+  const requests = [];
+  const client = createClient({ apiKey: 'fixture-key', fetchImpl: async (_url, request) => {
+    requests.push(request.redirect);
+    return new Response('fixture-private', { status: 307, headers: { location: 'https://fixture.invalid/' } });
+  } });
+  await assert.rejects(client.ask(state, questions), { message: 'TypeSafe request failed' });
+  assert.deepEqual(requests, ['error']);
+});
+
+test('fixed-model decision APIs reject a generation model before a request', () => {
+  for (const [provider, supported] of [['openai', 'gpt-6-luna'], ['gemini', 'gemini-decision-1']]) {
+    assert.throws(() => createClient({ provider, model: 'general-chat', mode: 'dry-run' }),
+      new RegExp(supported));
+    assert.doesNotThrow(() => createClient({ provider, model: supported, mode: 'dry-run' }));
+  }
+});
+
+test('hosted decision requests reject documented question and rubric limits before fetch', async () => {
+  const many = (count, value) => Object.fromEntries(Array.from({ length: count }, (_, i) => [`q${i}`, value]));
+  for (const [provider, limit] of [['openai', 400], ['gemini', 1000], ['cloudflare', 64], ['ollama-cloud', 64]]) {
+    let calls = 0;
+    const client = createClient({ provider, accountId, apiKey: 'fixture-key',
+      fetchImpl: async () => { calls++; return Response.json({ answers }); } });
+    await assert.rejects(client.ask(state, many(limit + 1, questions.urgent)), new RegExp(String(limit)));
+    assert.equal(calls, 0);
+    const preview = createClient({ provider, accountId, mode: 'dry-run' });
+    assert.equal((await preview.ask(state, many(limit, questions.urgent))).mode, 'dry-run');
+  }
+  for (const [provider, choices, levels] of [['openai', 255, 10], ['gemini', 255, 255], ['ollama-cloud', 26, 10]]) {
+    const client = createClient({ provider, mode: 'dry-run' });
+    await assert.rejects(client.ask(state, { team: choice('Which team?', many(choices + 1, 'A team')) }),
+      new RegExp(String(choices)));
+    await assert.rejects(client.ask(state, { severity: score('How severe?', Array(levels + 1).fill('Level')) }),
+      new RegExp(String(levels)));
+  }
+});
+
 const selfHosted = { provider: 'self-hosted', baseUrl: 'http://127.0.0.1:11434', model: 'fixture-model', apiKey: '' };
 const suggestions = { urgent: false, team: 'support', severity: 1 };
 for (const [format, path, response] of [
@@ -131,6 +169,16 @@ for (const [format, path, response] of [
       const body = JSON.parse(request.body);
       assert.equal(body.model, 'fixture-model');
       assert.equal(body.stream, false);
+      if (format === 'openai-chat') {
+        assert.equal(body.response_format.type, 'json_schema');
+        assert.equal(body.response_format.json_schema.strict, true);
+      }
+      const schema = format === 'ollama-chat' ? body.format : body.response_format.json_schema.schema;
+      assert.deepEqual(schema, { type: 'object', properties: {
+        urgent: { type: ['boolean', 'null'] },
+        team: { type: ['string', 'null'], enum: ['support', 'other', null] },
+        severity: { type: ['integer', 'null'], enum: [0, 1, null] },
+      }, required: ['urgent', 'team', 'severity'], additionalProperties: false });
       assert.equal(body.messages[0].role, 'system');
       assert.equal(body.messages[1].role, 'user');
       assert.deepEqual(JSON.parse(body.messages[1].content), { state, questions });
