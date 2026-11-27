@@ -27,8 +27,8 @@ options. The local preview shows both.
 
 Resolve the installed CLI and an absolute task-local path for the job file.
 Live is the default for an approved provider and a safe payload. The CLI
-selects a provider from `--provider`, then `DECISION_PROVIDER`, then `auto`.
-Automatic selection uses the first configured credential in the order
+selects a provider from `--provider`, then `DECISION_PROVIDER`, then TypeSafe.
+Explicit `auto` selects the first configured credential in the order
 TypeSafe, OpenAI, Gemini. Cloudflare, Ollama and custom require explicit
 selection. Choose an approved destination before sending evidence.
 See [provider configuration](../README.md#providers).

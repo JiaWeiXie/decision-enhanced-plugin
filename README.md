@@ -93,10 +93,11 @@ can invoke the CLI directly. The [one-time migration](docs/MIGRATION.md) uses Py
 
 ## Providers
 
-Selection is `--provider`, then `DECISION_PROVIDER`, then `auto`. Live
-`auto` checks for a credential in this order: TypeSafe, OpenAI, Gemini. It
-uses the first configured provider. Each run makes one attempt using that
-provider. Use an explicit provider if the evidence is approved for one destination.
+Selection is `--provider`, then `DECISION_PROVIDER`, then TypeSafe. Use
+`--provider auto` or `DECISION_PROVIDER=auto` to opt into credential-based
+selection. Live `auto` uses the first configured provider in this order:
+TypeSafe, OpenAI, Gemini. Each run makes one attempt using the selected provider.
+Choose an approved destination before sending evidence.
 
 | Provider | Environment | Model |
 | --- | --- | --- |
@@ -106,6 +107,11 @@ provider. Use an explicit provider if the evidence is approved for one destinati
 | `cloudflare` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN`, optional `DECISION_CLOUDFLARE_MODEL` | `clef`, `clef-flash`, `clef-omni` |
 | `ollama` | Optional `DECISION_OLLAMA_MODEL` | `clef` or explicit `clef:cloud` |
 | `custom` | Explicit endpoint, protocol and model below | Set by the operator |
+
+Gemini choice and score responses may have rounding drift. The adapter accepts
+a total within 0.01 of 1 when every option or level is present and in range.
+It preserves the probabilities returned by Gemini. Use `--provider gemini` when
+replaying such a response with `--mock`. [Gemini Decisions guide](https://aistudio.google.com/docs/decisions-api#score)
 
 Cloudflare, Ollama and custom require explicit selection. `--model` overrides
 the corresponding model variable for those three providers. The Cloudflare

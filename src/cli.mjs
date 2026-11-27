@@ -5,7 +5,7 @@ import { createClient, loadMockAnswers, DecisionError, rejectSecrets, validatePr
 import { packs, getPack } from '../packs/registry.mjs';
 
 const usage = `Usage: decision-pack <pack> --state <file|-> [--provider auto|typesafe|openai|gemini|cloudflare|ollama|custom] [--dry-run | --mock <file>] [--json]
-Live mode is the default. Provider selection uses --provider, then DECISION_PROVIDER, then auto.
+Live mode is the default. Provider selection uses --provider, then DECISION_PROVIDER, then typesafe.
 Use --model for Cloudflare, Ollama, or a custom endpoint. Custom also accepts --custom-base or --custom-endpoint and --custom-protocol.
 Supply only minimal evidence free of secrets, customer data, and sensitive personal data.
 --dry-run performs no inference. --mock replays synthetic or recorded values, not live judgments.
@@ -104,7 +104,8 @@ async function main() {
     response = unavailable(error.reason);
   }
 
-  if (mode === 'dry-run' || response.reason === 'unsafe_payload') {
+  if (mode === 'dry-run' || response.reason === 'unsafe_payload' ||
+    (response.mode === 'unavailable' && provider === 'custom')) {
     writeOutput(response, json);
     return;
   }
@@ -113,7 +114,17 @@ async function main() {
     mode: response.mode, provider: response.provider ?? null, model: response.model ?? null,
     usage: response.usage ?? null, reason: response.reason ?? null, answers: response.answers, result,
   };
-  writeOutput(output, json, json ? '' : pack.render(result, state));
+  const rendered = json ? '' : pack.render(result, state);
+  if (response.mode === 'unavailable') {
+    try {
+      rejectSecrets(json ? result : rendered);
+    } catch (error) {
+      if (!(error instanceof DecisionError)) throw error;
+      writeOutput({ ...response, result: null }, json);
+      return;
+    }
+  }
+  writeOutput(output, json, rendered);
 }
 
 main().catch(error => {

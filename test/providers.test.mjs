@@ -118,7 +118,7 @@ test('auto selects one provider in compatibility order and does not fail over', 
   ];
   for (const [env, expected] of candidates) {
     const calls = [];
-    const client = createClient({ env, fetchImpl: async url => {
+    const client = createClient({ env: { ...env, DECISION_PROVIDER: 'auto' }, fetchImpl: async url => {
       calls.push(url);
       return new Response('DO-NOT-ECHO', { status: 429 });
     } });
@@ -136,7 +136,7 @@ test('provider refusals, duplicate names, invalid distributions and non-JSON rem
     { ...openAI, answers: [openAI.answers[0], openAI.answers[1], { ...openAI.answers[2], choice: 'foreign' }] },
   ];
   const badGemini = [
-    { ...gemini, prompt_feedback: { block_reason: 'DO-NOT-ECHO' } },
+    { answers: {}, prompt_feedback: { block_reason: 'safety', block_reason_message: 'DO-NOT-ECHO' } },
     { ...gemini, answers: { ...gemini.answers, q2: { ...answers.severity, score: 3 } } },
     { ...gemini, answers: { ...gemini.answers, q1: { ...answers.path, probabilities: { local: 0.9, review: 0.9 } } } },
   ];
@@ -148,4 +148,38 @@ test('provider refusals, duplicate names, invalid distributions and non-JSON rem
       await assert.rejects(client.ask(state, questions), { message: 'judgments_unavailable' });
     }
   }
+});
+
+test('implicit TypeSafe selection never falls through to keys for another provider', async () => {
+  const env = { OPENAI_API_KEY: 'synthetic-openai', GEMINI_API_KEY: 'synthetic-gemini' };
+  const fetchImpl = () => assert.fail('non-TypeSafe transport requested');
+  assert.throws(() => createClient({ env, fetchImpl }), { reason: 'missing_api_key' });
+  const preview = await createClient({ mode: 'dry-run', env, fetchImpl }).ask(state, questions);
+  assert.equal(preview.provider, 'typesafe');
+  assert.equal(preview.request.model, 'jev-latest');
+});
+
+test('Gemini guide rounding is accepted without rewriting or inventing probabilities', async () => {
+  // https://aistudio.google.com/docs/decisions-api#score
+  const rounded = { 0: 0.03, 1: 0.83, 2: 0.15 };
+  const expected = { type: 'score', score: 1.12, confidence: 0.83, probabilities: rounded };
+  const run = probabilities => createClient({ provider: 'gemini', apiKey: 'fixture-key', env: {},
+    fetchImpl: () => Response.json({ answers: { q0: { ...expected, probabilities } } }),
+  }).ask(state, { severity: questions.severity });
+  assert.deepEqual((await run(rounded)).answers.severity, expected);
+  const replay = await createClient({ mode: 'mock', provider: 'gemini', env: {}, mockAnswers: { severity: expected } })
+    .ask(state, { severity: questions.severity });
+  assert.equal(replay.mode, 'mock');
+  assert.deepEqual(replay.answers.severity, expected);
+  await assert.rejects(run({ 0: 0.03, 1: 0.84, 2: 0.15 }), { reason: 'judgments_unavailable' });
+  await assert.rejects(run({ 0: 0.03, 1: 0.97 }), { reason: 'judgments_unavailable' });
+  await assert.rejects(run({ 0: 0.03, 1: 0.83, unknown: 0.14 }), { reason: 'judgments_unavailable' });
+});
+
+test('Gemini 400 drops provider error text', async () => {
+  const client = createClient({ provider: 'gemini', apiKey: 'fixture-key', env: {},
+    fetchImpl: () => Response.json({ error: { message: 'DO-NOT-ECHO' } }, { status: 400 }),
+  });
+  await assert.rejects(client.ask(state, questions),
+    { reason: 'judgments_unavailable', message: 'judgments_unavailable', status: 400 });
 });

@@ -31,7 +31,7 @@ export class MissingApiKeyError extends DecisionError {
 }
 
 export function validateProvider(value) {
-  const provider = value ?? 'auto';
+  const provider = value ?? 'typesafe';
   if (provider !== 'auto' && !providerNames.includes(provider)) throw new DecisionError('unknown_provider');
   return provider;
 }
@@ -48,7 +48,9 @@ function safeUsage(usage) {
 }
 
 // Reconstruct output fields from validated values. Provider text and extra fields never reach callers.
-function validateAnswers(answers, questions) {
+function validateAnswers(answers, questions, protocol) {
+  // The Gemini guide shows two-decimal probabilities that can add up to 1.01.
+  const sumTolerance = protocol === 'gemini' ? 0.01 + 4 * Number.EPSILON : 0.001;
   if (!record(answers) || Object.keys(answers).length !== Object.keys(questions).length) throw new DecisionError();
   return Object.fromEntries(Object.entries(questions).map(([id, question]) => {
     const answer = Object.hasOwn(answers, id) ? answers[id] : null;
@@ -63,7 +65,7 @@ function validateAnswers(answers, questions) {
     const distribution = answer.probabilities;
     if (!record(distribution) || Object.keys(distribution).length !== keys.length ||
       keys.some(key => !Object.hasOwn(distribution, key) || !probability(distribution[key])) ||
-      Math.abs(keys.reduce((sum, key) => sum + distribution[key], 0) - 1) > 0.001 ||
+      Math.abs(keys.reduce((sum, key) => sum + distribution[key], 0) - 1) > sumTolerance ||
       !probability(answer.confidence)) throw new DecisionError();
     const normalized = {
       type: question.type, confidence: answer.confidence,
@@ -128,12 +130,16 @@ export function createClient({ mode = 'live', provider: requested, env = process
   if (!['live', 'dry-run', 'mock'].includes(mode)) throw new TypeError('Unknown client mode');
   const selection = validateProvider(requested ?? env.DECISION_PROVIDER);
   const live = mode === 'live';
+  const configuredKey = name => {
+    if (name !== 'cloudflare' && (selection !== 'auto' || name === 'typesafe') && apiKey != null) {
+      return apiKey.trim();
+    }
+    return keyFor(name, env);
+  };
   const provider = selection === 'auto'
-    ? (live && apiKey === undefined ? autoOrder.find(name => keyFor(name, env)) : null) ?? 'typesafe'
+    ? (live ? autoOrder.find(configuredKey) : undefined) ?? 'typesafe'
     : selection;
-  const key = live && keyNames[provider]
-    ? (provider === 'cloudflare' ? keyFor(provider, env) : apiKey?.trim() ?? keyFor(provider, env))
-    : undefined;
+  const key = live && keyNames[provider] ? configuredKey(provider) : undefined;
   if (live && keyNames[provider] && !key) throw new MissingApiKeyError();
   if (key && /[^\x21-\x7e]/.test(key)) throw new DecisionError('invalid_provider_config');
   let config;
@@ -146,7 +152,9 @@ export function createClient({ mode = 'live', provider: requested, env = process
     (provider === 'custom' || provider === 'ollama' ? directFetch : globalThis.fetch));
   return {
     async ask(state, questions) {
-      if (mode === 'mock') return { mode, provider: null, answers: validateAnswers(mockAnswers, questions), model: null };
+      if (mode === 'mock') {
+        return { mode, provider: null, answers: validateAnswers(mockAnswers, questions, selection), model: null };
+      }
       const request = JSON.parse(JSON.stringify({ state, model: config.model, questions }));
       // Inspect question criteria as well as the state, including text stored only in choices.
       const customKeys = provider === 'custom' ? Object.values(config.headers)
@@ -180,7 +188,7 @@ export function createClient({ mode = 'live', provider: requested, env = process
           mode, provider,
           model: provider === 'typesafe' ? safeTypeSafeModel(response?.model, config.model, env, key) : config.model,
           usage: safeUsage(response?.usage),
-          answers: validateAnswers(response?.answers, request.questions),
+          answers: validateAnswers(response?.answers, request.questions, config.protocol),
         };
       } catch (error) {
         // Neither provider body, payload, credential, nor exception message is diagnostic output.

@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
+const noNetwork = 'data:text/javascript,' + encodeURIComponent(
+  'globalThis.fetch = () => { throw new Error("Unexpected transport in CLI test"); };',
+);
+const testEnv = { PATH: process.env.PATH };
 function run(pack, input, args = [], extraEnv = {}) {
-  return spawnSync(process.execPath, [cli, pack, '--state', '-', '--json', ...args], {
-    input, encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '', GOOGLE_API_KEY: '', DECISION_PROVIDER: 'auto', ...extraEnv },
+  return spawnSync(process.execPath, ['--import', noNetwork, cli, pack, '--state', '-', '--json', ...args], {
+    input, encoding: 'utf8', env: { ...testEnv, ...extraEnv },
   });
 }
 function invoke(input, args = []) {
@@ -26,7 +30,7 @@ test('missing required collection is an input error, not a clean empty judgment'
 
 test('help advertises live as the default and preview and replay as explicit options', () => {
   const result = spawnSync(process.execPath, [cli, '--help'], {
-    encoding: 'utf8', env: { ...process.env, TYPESAFE_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '', GOOGLE_API_KEY: '', DECISION_PROVIDER: 'auto' },
+    encoding: 'utf8', env: testEnv,
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Live mode is the default/);
@@ -100,11 +104,33 @@ test('secret-bearing payload never appears in stdout or stderr even with preview
   }
 });
 
-test('custom destination or model flags cannot fall through to auto', () => {
+test('custom destination or model flags cannot fall through to the default provider', () => {
   const input = '{"passages":["Sample"],"locale":"en"}';
   for (const flags of [['--custom-endpoint', 'https://fixture.invalid/'], ['--model', 'clef']]) {
     const result = run('humanizer', input, flags);
     assert.equal(result.status, 3);
     assert.equal(JSON.parse(result.stdout).reason, 'invalid_provider_config');
   }
+});
+
+test('implicit TypeSafe with only other provider keys reports a missing TypeSafe key', () => {
+  const result = run('humanizer', '{"passages":["Sample"],"locale":"en"}', [],
+    { OPENAI_API_KEY: 'SYNTHETIC-OPENAI-140', GEMINI_API_KEY: 'SYNTHETIC-GEMINI-140' });
+  assert.equal(result.status, 3);
+  assert.equal(JSON.parse(result.stdout).reason, 'missing_api_key');
+  assert.doesNotMatch(result.stdout + result.stderr, /SYNTHETIC-OPENAI-140|SYNTHETIC-GEMINI-140/);
+});
+
+test('unavailable output does not echo a secret in a local-only review path', () => {
+  const secret = 'SYNTHETIC-LOCAL-ONLY-REVIEW-SECRET';
+  const state = {
+    standards: 'Use readable names',
+    findings: [{ axis: 'standards', claim: 'Rename the public field', evidence: 'Old example',
+      candidates: [], file: secret + '/example.txt', line: 1 }],
+  };
+  const result = run('review-findings', JSON.stringify(state), [], { OPENAI_API_KEY: secret });
+  assert.equal(result.status, 3);
+  assert.equal(JSON.parse(result.stdout).reason, 'missing_api_key');
+  assert.equal(JSON.parse(result.stdout).result, null);
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(secret));
 });
